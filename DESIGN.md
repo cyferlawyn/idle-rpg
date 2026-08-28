@@ -173,6 +173,61 @@ idle-rpg/
 └── DESIGN.md          # this file, kept up to date as we learn things
 ```
 
+## Future scope (explicitly post-v0 — captured now, not built now)
+
+Two long-term concepts worth recording while fresh, so v0 systems don't
+accidentally foreclose them later. Neither should influence v0 build priorities.
+
+### Faith spend spectrum: nudge vs. divine intervention
+
+Faith/nudge currency eventually splits into two distinct spend categories, not one
+undifferentiated pool:
+
+- **Nudge (steering)** — the existing three-tier model (ambient weighting →
+  directive queue → soft override). Biases what the toon *chooses* to do; the toon
+  still has to succeed on its own.
+- **Divine intervention (miracle)** — direct, guaranteed alteration of an outcome:
+  buff the toon mid-fight, curse an enemy, make gathering more abundant, and
+  eventually **resurrection**. More expensive than nudging, narratively framed as an
+  actual miracle rather than a suggestion, and should stay visibly distinct in the
+  UI/spend model from nudge tiers — if the two are numerically interchangeable,
+  players will always pick whichever is cheaper and the flavor split disappears.
+
+Resurrection matters beyond flavor: it's the answer to "the toon can die while the
+player isn't watching, from a bad fight it shouldn't have taken." Framing that as a
+bankable divine safety net (do I have enough faith saved up to matter) turns a
+permadeath/bad-RNG risk into a real strategic choice (spend now vs. save for a
+rainy day) instead of a design liability. Keep this in mind once combat balancing
+starts even in v0 — don't design combat around permadeath being purely punishing
+before intervention exists to soften it.
+
+### Epic arc vs. side quests
+
+Two distinct quest tracks, not one graph:
+
+- **Epic arc (main story)** — a long, hand-authored quest chain carrying most of the
+  narrative (plus toon monologue/introspection as flavor). Progresses in step with
+  the toon's growing power, and **each checkpoint unlocks a new nudge/intervention
+  mechanic** (e.g., early game only ambient weighting is available; a mid-arc
+  checkpoint unlocks directive-queue targeting; a late checkpoint unlocks miracles).
+  This makes mechanic unlocks narratively motivated — the god's reach into the world
+  literally grows as the toon's faith/renown grows — rather than an arbitrary tech
+  gate bolted on separately. Sparse by design; this is where authored content effort
+  goes.
+- **Side quests (fire-and-forget)** — lighthearted, low-stakes, everyday NPC
+  problems (cat in a tree, rat infestation), burned through quickly, primarily a
+  faith/XP content mill. Low narrative overhead by design — strong candidate for
+  templating/light procedural generation later so the toon always has *something*
+  to do without every quest needing hand-written stakes. This is what keeps an idle
+  sim watchable without demanding a hundred hand-authored quests.
+
+Practical implication for v0: keep the quest data model general enough that a quest
+can optionally reference "unlocks mechanic X on completion" and a narrative-weight
+flag (epic vs. side), even though v0 itself only needs a couple of side-quest-style
+fetch/kill/deliver quests to prove the directive queue works end to end. Don't build
+the epic arc's content or the unlock-gating logic yet — just don't paint the data
+model into a corner that can't grow into it.
+
 ## Open questions (track, don't block on)
 
 - Prayer accrual rate and per-tier directive costs — needs actual play/tuning, not a
