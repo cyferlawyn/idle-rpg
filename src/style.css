@@ -1,0 +1,36 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color-scheme: dark;
+  background: #14141a;
+  color: #e6e6ea;
+}
+
+.game {
+  max-width: 640px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.tag {
+  font-size: 0.8rem;
+  color: #888;
+  font-weight: normal;
+}
+
+.stats, .log {
+  background: #1e1e26;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-top: 1rem;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+li {
+  padding: 0.15rem 0;
+  font-size: 0.9rem;
+}
