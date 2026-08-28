@@ -228,6 +228,40 @@ fetch/kill/deliver quests to prove the directive queue works end to end. Don't b
 the epic arc's content or the unlock-gating logic yet — just don't paint the data
 model into a corner that can't grow into it.
 
+### Visual overworld + dedicated fight screen
+
+v0 ships as a stats/log-feed DOM UI (per the Tech stack section) and that's the
+right call for now — a numbers-and-text idler is legitimately watchable and far
+faster to build against while the sim/decision/quest systems are still being
+figured out. But the long-term ambition is a 2D overworld the toon visibly walks
+around in (zones, travel between them rendered as actual movement) plus a separate
+fight screen when combat triggers — something pleasant to glance at on a second
+monitor, not just a scrolling log.
+
+This is deliberately not a v0 feature (real art/tile assets, a renderer, animation
+timing — all substantial scope on their own) but it does have one architectural
+consequence worth respecting *starting now*, not retrofitted later:
+
+- **`sim/` must stay a pure, renderer-agnostic state machine.** It already is (state/
+  decision/tick have no DOM coupling) — keep it that way as combat, quests, and
+  prayer get built out. A future canvas/2D renderer should be able to subscribe to
+  `WorldState` and draw it without any changes to `sim/` itself, the same way the
+  current DOM list-rendering in `main.ts` does.
+- **Model position/movement as real state now, even though nothing renders it
+  yet.** Zones/travel already exist conceptually (see World system above) — give
+  travel an actual position-over-time representation (e.g. current zone + progress
+  toward destination) rather than an instant teleport-on-arrival, so a future map
+  view has real movement data to animate instead of the concept having to be
+  invented retroactively.
+- **Combat resolution should be structured as a resolvable sequence of rounds/
+  events, not a single collapsed dice roll.** That gives a future fight screen
+  actual beats to animate (hit, miss, ability, kill) rather than only a before/after
+  HP delta. Doesn't need a real "engine" for v0 — just don't collapse combat into
+  one opaque function call that only returns a final result.
+
+None of this changes v0 scope or the DOM-only UI decision — it's a "don't box
+ourselves out of this later" constraint on how `sim/` is shaped while we build it.
+
 ## Open questions (track, don't block on)
 
 - Prayer accrual rate and per-tier directive costs — needs actual play/tuning, not a
@@ -243,3 +277,6 @@ model into a corner that can't grow into it.
   creep into party management yet.
 - Altars/temples as a passive prayer-income building system — deliberately deferred
   past v0; revisit once the base quest/prayer loop is proven fun on its own.
+- Visual overworld/fight-screen tech choice (raw canvas vs. a lightweight 2D lib
+  like PixiJS/Kaboom) — deferred until v0's DOM UI proves the loop is fun; decide
+  once there's a real feel for how much movement/combat detail is worth animating.
