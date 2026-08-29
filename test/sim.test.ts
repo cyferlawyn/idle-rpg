@@ -586,7 +586,11 @@ describe("crafting exhaustion (concentration pool)", () => {
     state.toon.pools.focus.current = 0;
     state.toon.pools.vitality.current = 0;
     state.toon.pools.nerve.current = 0;
-    state.toon.pools.fatigue.current = 0;
+    // Deliberately leave fatigue full (mirrors the sibling fatigue-regen
+    // test leaving concentration full): keeps a same-rate pool "winning"
+    // ambient's top-tier score every tick so the toon stays committed to
+    // gathering/resting-adjacent behavior instead of stamina's faster
+    // regen (2/tick vs 0.5/tick) hijacking it into hunting after tick 1.
     runTicks(state, 10);
     expect(state.toon.pools.concentration.current).toBeCloseTo(5, 5); // 0.5/tick * 10
   });
