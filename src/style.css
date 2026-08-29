@@ -327,8 +327,17 @@ li {
     max-width: calc(100vw - 2rem);
   }
 
+  /* Narrow viewports: hud-stats and hud-combat both anchor top-left/top,
+     which collide once hud-combat spans the full width below. Shrink
+     hud-stats to a compact corner chip and stack hud-combat underneath
+     it (max-height on hud-stats keeps its footprint predictable even
+     with the collapsible button list). */
+  .hud-stats {
+    max-height: 6.5rem;
+  }
+
   .hud-combat {
-    top: 1rem;
+    top: 7rem;
     left: 1rem;
     right: 1rem;
   }
