@@ -11,6 +11,9 @@ export interface Action {
   detail: string;
 }
 
+/** Ticks of travel before a hunt reaches a monster and combat can start. */
+export const HUNT_TRAVEL_TICKS = 2;
+
 /**
  * Tier B: directive queue. Pops the front directive if present and returns
  * an action working toward it. Quest directives start (or resume) the active
@@ -21,13 +24,28 @@ function actionForDirective(state: WorldState, directive: Directive): Action {
     case "train":
       return { kind: "train", detail: directive.target };
     case "hunt":
-      return { kind: "travel", detail: directive.target };
+      return huntAction(state);
     case "quest":
       if (state.toon.activeQuest?.questId !== directive.target) {
         startQuest(state, directive.target);
       }
       return { kind: "quest", detail: directive.target };
   }
+}
+
+/**
+ * Resolves what "hunt" actually does this tick: continue an active fight,
+ * continue travel toward the monster, or (once close enough) engage. Real
+ * position/travel state per DESIGN.md, not an instant teleport into combat.
+ */
+function huntAction(state: WorldState): Action {
+  if (state.toon.activeFight) {
+    return { kind: "fight", detail: state.toon.activeFight.monsterId };
+  }
+  if (state.toon.travel) {
+    return { kind: "travel", detail: "nearest monster" };
+  }
+  return { kind: "travel", detail: "nearest monster" };
 }
 
 /**
@@ -58,7 +76,7 @@ function ambientCandidates(state: WorldState): Candidate[] {
     { action: { kind: "train", detail: "combat" }, pool: "stamina" },
     { action: { kind: "train", detail: "gathering" }, pool: "energy" },
     { action: { kind: "train", detail: "crafting" }, pool: "focus" },
-    { action: { kind: "travel", detail: "nearest monster" }, pool: "stamina" },
+    { action: huntAction(state), pool: "stamina" },
   ];
 
   for (const quest of Object.values(QUESTS)) {

@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { createInitialState } from "../src/sim/state";
-import { getNextAction, issueDirective, DIRECTIVE_COST } from "../src/sim/decision";
+import { getNextAction, issueDirective, DIRECTIVE_COST, HUNT_TRAVEL_TICKS } from "../src/sim/decision";
 import { step, runTicks } from "../src/sim/tick";
 import { startQuest, progressActiveQuest, QUESTS } from "../src/sim/quests";
+import { startFight, resolveFightRound } from "../src/sim/combat";
 
 describe("decision layer", () => {
   it("follows an active directive over ambient weighting", () => {
@@ -213,5 +214,77 @@ describe("ambient variety (pool-priority picking)", () => {
     state.toon.completedQuests.push("cat-in-tree", "rat-basement");
     const action = getNextAction(state);
     expect(action.kind).toBe("rest");
+  });
+});
+
+describe("combat", () => {
+  it("resolves a fight as a real sequence of rounds, not a single roll", () => {
+    const state = createInitialState();
+    startFight(state, "meadow-rat");
+    expect(state.toon.activeFight?.monsterId).toBe("meadow-rat");
+    const initialHp = state.toon.activeFight!.monsterHp;
+
+    resolveFightRound(state);
+
+    // Either still ongoing with reduced monster HP, or already resolved --
+    // either way, exactly one round's worth of change happened, not a
+    // single collapsed before/after delta with no visible steps.
+    if (state.toon.activeFight) {
+      expect(state.toon.activeFight.monsterHp).toBeLessThan(initialHp);
+    }
+  });
+
+  it("awards XP, gold, and a kill credit on victory", () => {
+    const state = createInitialState();
+    // Combat level 5 makes the meadow rat go down fast and reliably.
+    state.toon.skills.combat.level = 5;
+    startFight(state, "meadow-rat");
+    let rounds = 0;
+    while (state.toon.activeFight && rounds < 20) {
+      resolveFightRound(state);
+      rounds++;
+    }
+    expect(state.toon.kills["meadow-rat"]).toBe(1);
+    expect(state.toon.skills.combat.xp).toBeGreaterThan(0);
+    expect(state.toon.gold).toBeGreaterThan(0);
+  });
+
+  it("flees instead of dying when HP drops critically low (no permadeath in v0)", () => {
+    const state = createInitialState();
+    state.toon.hp = 10; // near the flee threshold but with margin against max roll variance
+    state.toon.maxHp = 20;
+    startFight(state, "village-bandit"); // hits hard enough to trigger it
+    let rounds = 0;
+    while (state.toon.activeFight && rounds < 30) {
+      resolveFightRound(state);
+      rounds++;
+    }
+    expect(state.toon.hp).toBeGreaterThan(0); // never actually dies in v0
+    expect(state.toon.activeFight).toBeNull(); // disengaged (fled or won)
+  });
+
+  it("kill-type quest steps only progress on a matching real kill, not blind ticks", () => {
+    const state = createInitialState();
+    state.toon.activeQuest = { questId: "rat-basement", stepIndex: 1, stepProgress: 0 };
+    // Wrong monster: should not progress the "village-rat" kill step.
+    progressActiveQuest(state, { monsterId: "meadow-rat" });
+    expect(state.toon.activeQuest.stepProgress).toBe(0);
+    // Right monster: should progress.
+    progressActiveQuest(state, { monsterId: "village-rat" });
+    expect(state.toon.activeQuest.stepProgress).toBe(1);
+    // No kill event at all (e.g. a plain tick): should not progress either.
+    progressActiveQuest(state);
+    expect(state.toon.activeQuest.stepProgress).toBe(1);
+  });
+
+  it("hunting travels first, then engages a real fight once arrived (via the tick loop)", () => {
+    const state = createInitialState();
+    state.directives.push({ type: "hunt", target: "nearest monster", issuedAt: 0 });
+    runTicks(state, HUNT_TRAVEL_TICKS);
+    expect(state.toon.activeFight).not.toBeNull();
+    // The fight starts this tick (as a side effect of arriving), so the
+    // *next* tick's action/currentActivity is the one that reflects it.
+    step(state);
+    expect(state.currentActivity).toMatch(/Fighting/);
   });
 });

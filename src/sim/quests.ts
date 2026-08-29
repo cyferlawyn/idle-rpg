@@ -51,7 +51,7 @@ export const QUESTS: Record<string, QuestDefinition> = {
       "innkeeper over to the faith.",
     steps: [
       { kind: "travel", target: "village", amount: 2 },
-      { kind: "kill", target: "rat", amount: 5 },
+      { kind: "kill", target: "village-rat", amount: 5 },
     ],
     rewardXp: { combat: 20 },
     rewardPrayer: 10,
@@ -69,7 +69,19 @@ function currentStep(quest: QuestDefinition, stepIndex: number): QuestStep | und
  * are crossed. Pure mutation of WorldState, no I/O -- callable from the tick
  * loop the same way combat/training are.
  */
-export function progressActiveQuest(state: WorldState): void {
+/**
+ * Advances the toon's active quest. Travel-type steps advance by one unit
+ * of tick-progress unconditionally (position/travel is already modeled as
+ * real state per DESIGN.md). Kill-type steps only advance on a real kill
+ * event matching the step's target monster -- previously this blindly
+ * ticked forward regardless of step kind, meaning "kill 5 rats" completed
+ * without any actual combat happening. Gather/deliver steps aren't
+ * authored yet in v0 and keep the simple tick-progress fallback.
+ */
+export function progressActiveQuest(
+  state: WorldState,
+  killEvent?: { monsterId: string },
+): void {
   const active = state.toon.activeQuest;
   if (!active) return;
 
@@ -78,6 +90,10 @@ export function progressActiveQuest(state: WorldState): void {
 
   const step = currentStep(quest, active.stepIndex);
   if (!step) return;
+
+  if (step.kind === "kill") {
+    if (!killEvent || killEvent.monsterId !== step.target) return;
+  }
 
   active.stepProgress += 1;
 

@@ -115,6 +115,14 @@ prematurely.
   hardcoded actions (a real bug in the first version of this system).
 - **Combat**: simple deterministic/RNG-light auto-battler math against tiered
   monsters. No twitch/positioning — this is a numbers loop, not an action game.
+  Implemented v0: `sim/monsters.ts` (per-zone monster tiers, meadow weakest ->
+  village tougher, matching quest zones already referenced), `sim/combat.ts`
+  resolves one round per tick (flat attack-minus-defense with small
+  randomness, per your steer) rather than one collapsed roll, logging each
+  hit individually. HP never reaches a real death state in v0 -- below 25%
+  HP the toon flees and disengages instead, since Divine Intervention/
+  resurrection (the intended long-term safety net, see Future scope) doesn't
+  exist yet; treat this flee threshold as the placeholder until it does.
 - **Quests**: a small quest graph (fetch/kill/deliver), enough to prove the
   directive-queue targeting a specific quest works end to end. Some quests should
   plausibly read as "converting"/impressing a settlement, to justify prayer income

@@ -2,6 +2,9 @@ import type { WorldState, PoolName } from "./state";
 import { getNextAction, type Action } from "./decision";
 import { progressActiveQuest, startQuest, QUESTS } from "./quests";
 import { SKILL_POOL, drainPool, regenIdlePools, isPoolDepleted } from "./pools";
+import { pickMonster, startFight, resolveFightRound } from "./combat";
+import { MONSTERS } from "./monsters";
+import { HUNT_TRAVEL_TICKS } from "./decision";
 
 const XP_PER_TRAIN_TICK = 5;
 const XP_TO_LEVEL = (level: number) => level * 100;
@@ -27,8 +30,10 @@ function describeActivity(action: Action): string {
       return `Training ${action.detail}`;
     case "travel":
       return `Traveling to ${action.detail}`;
-    case "fight":
-      return `Fighting at ${action.detail}`;
+    case "fight": {
+      const monster = MONSTERS[action.detail];
+      return `Fighting ${monster?.name ?? action.detail}`;
+    }
     case "quest": {
       const quest = QUESTS[action.detail];
       return `Questing: ${quest?.title ?? action.detail}`;
@@ -56,11 +61,29 @@ function applyAction(state: WorldState, action: Action): void {
       break;
     }
     case "travel":
-      state.log.push(`${state.toon.name} heads toward ${action.detail}`);
+      // Real position/travel state, not an instant teleport (DESIGN.md
+      // constraint) -- advance ticksRemaining; once it hits 0, pick a
+      // monster in the current zone and start a real fight.
+      if (!state.toon.travel) {
+        state.toon.travel = { destination: "nearest monster", ticksRemaining: HUNT_TRAVEL_TICKS };
+        state.log.push(`${state.toon.name} heads toward ${action.detail}`);
+      }
+      state.toon.travel.ticksRemaining -= 1;
+      if (state.toon.travel.ticksRemaining <= 0) {
+        state.toon.travel = null;
+        const monsterId = pickMonster(state);
+        if (monsterId) startFight(state, monsterId);
+        else state.log.push(`${state.toon.name} finds no monsters here`);
+      }
       break;
-    case "fight":
-      state.log.push(`${state.toon.name} fights at ${action.detail}`);
+    case "fight": {
+      const monsterId = state.toon.activeFight?.monsterId;
+      const result = resolveFightRound(state);
+      if (result === "kill" && monsterId) {
+        progressActiveQuest(state, { monsterId });
+      }
       break;
+    }
     case "quest":
       // Ambient picks and directive-driven picks both land here; start the
       // quest if it isn't already the active one (startQuest is a safe

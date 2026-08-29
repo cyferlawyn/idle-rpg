@@ -29,6 +29,17 @@ export interface ActiveQuest {
   stepProgress: number;
 }
 
+/**
+ * A fight resolves as a real sequence of rounds (one per tick), per
+ * DESIGN.md's architectural constraint -- not one collapsed dice roll --
+ * so a future fight screen has real hit/miss/kill beats to animate rather
+ * than only a before/after HP delta.
+ */
+export interface ActiveFight {
+  monsterId: string;
+  monsterHp: number;
+}
+
 export interface ToonState {
   name: string;
   hp: number;
@@ -49,6 +60,10 @@ export interface ToonState {
   inventory: string[];
   activeQuest: ActiveQuest | null;
   completedQuests: string[];
+  activeFight: ActiveFight | null;
+  /** Lifetime kills per monster id -- lets kill-type quest steps gate on
+   * real combat outcomes instead of a blind tick counter. */
+  kills: Record<string, number>;
 }
 
 export type DirectiveType = "quest" | "hunt" | "train";
@@ -103,6 +118,8 @@ export function createInitialState(): WorldState {
       inventory: [],
       activeQuest: null,
       completedQuests: [],
+      activeFight: null,
+      kills: {},
     },
     directives: [],
     prayer: 0,

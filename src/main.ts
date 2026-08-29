@@ -25,12 +25,13 @@ app.innerHTML = `
     <section class="stats">
       <div class="activity">Now: <strong id="current-activity"></strong></div>
       <div><strong id="toon-name"></strong> — HP <span id="toon-hp"></span></div>
-      <div>Prayer: <span id="prayer"></span></div>
+      <div>Gold: <span id="gold"></span> · Prayer: <span id="prayer"></span></div>
       <ul id="skills"></ul>
       <ul id="pools"></ul>
     </section>
     <section class="stats">
       <button id="quest-btn">Nudge: do "Cat in the Tree" quest (costs prayer)</button>
+      <button id="hunt-btn">Nudge: hunt nearby monsters (costs prayer)</button>
     </section>
     <section class="log">
       <h2>Log</h2>
@@ -44,10 +45,16 @@ document.querySelector("#quest-btn")!.addEventListener("click", () => {
   render();
 });
 
+document.querySelector("#hunt-btn")!.addEventListener("click", () => {
+  issueDirective(state, "hunt", "nearest monster");
+  render();
+});
+
 function render(): void {
   document.querySelector("#current-activity")!.textContent = state.currentActivity;
   document.querySelector("#toon-name")!.textContent = state.toon.name;
   document.querySelector("#toon-hp")!.textContent = `${state.toon.hp}/${state.toon.maxHp}`;
+  document.querySelector("#gold")!.textContent = String(state.toon.gold);
   document.querySelector("#prayer")!.textContent = String(state.prayer);
 
   const skillsEl = document.querySelector("#skills")!;
