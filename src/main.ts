@@ -6,21 +6,33 @@ import { initOverworldCanvas, renderOverworld, renderFightScreen } from "./rende
 import { initNodeTooltip } from "./render/tooltip";
 import { XP_TO_LEVEL } from "./sim/xp";
 import { cycleCombatStyle, STYLE_LABELS } from "./sim/combat";
+import { loadState, setupAutosave } from "./sim/storage";
 
 const TICK_INTERVAL_MS = 1000;
+const AUTOSAVE_INTERVAL_MS = 30_000;
 
-const state = createInitialState();
+// Restore from localStorage if a save exists; otherwise bootstrap fresh.
+// The offline-fast-forward integration (t_4b3b86a8) consumes `loadedSave`'s
+// savedAt timestamp to compute elapsed real time -- kept here rather than
+// discarded so that follow-up work doesn't have to re-read storage.
+const loadedSave = loadState();
+const state = loadedSave ? loadedSave.state : createInitialState();
 
-// Bootstrap: start the toon training combat by default so there's visible
-// progress with zero player input -- proves the "plays itself" premise.
-// This directive is now correctly consumed once stamina depletes (see
-// sim/tick.ts) rather than running forever -- fixed a real bug where
-// generic directives never expired and silently blocked later nudges.
-state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
-// Seed a little starting prayer so the quest directive button is usable
-// immediately without waiting on the ambient loop -- v0 demo convenience,
-// not a balance decision (see DESIGN.md open questions on prayer tuning).
-state.prayer = 10;
+if (!loadedSave) {
+  // Bootstrap: start the toon training combat by default so there's visible
+  // progress with zero player input -- proves the "plays itself" premise.
+  // This directive is now correctly consumed once stamina depletes (see
+  // sim/tick.ts) rather than running forever -- fixed a real bug where
+  // generic directives never expired and silently blocked later nudges.
+  state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
+  // Seed a little starting prayer so the quest directive button is usable
+  // immediately without waiting on the ambient loop -- v0 demo convenience,
+  // not a balance decision (see DESIGN.md open questions on prayer tuning).
+  state.prayer = 10;
+}
+
+// Autosave on interval + on page unload (see sim/storage.ts).
+setupAutosave(state, { intervalMs: AUTOSAVE_INTERVAL_MS });
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
