@@ -1,5 +1,12 @@
 export type SkillName = "combat" | "gathering" | "crafting";
 
+/** Ambient mode's current commitment, kept as an abstract intent (not a
+ * concrete Action) so e.g. "hunt" can still resolve to travel-then-fight
+ * as real state changes underneath it. Untyped here (decision.ts owns the
+ * real `AmbientIntent` type) to avoid a circular import; decision.ts casts
+ * on read since it is the only place that constructs/consumes this value. */
+export type AmbientCommitment = { kind: string; [k: string]: unknown } | null;
+
 export interface Skill {
   level: number;
   xp: number;
@@ -79,6 +86,18 @@ export interface WorldState {
   toon: ToonState;
   directives: Directive[]; // queue, front = active
   /**
+   * Ambient mode's current commitment (Tier A only -- directives always
+   * take priority and aren't affected by this). Ambient previously
+   * re-rolled a fresh pick every single tick, which meant even ties among
+   * several available quests reroll independently each tick -- observed as
+   * the toon starting a different quest every tick and never finishing
+   * one. Now ambient sticks to this pick until it's no longer valid (its
+   * pool depletes, or a quest pick completes/becomes otherwise invalid),
+   * matching the same "commit until costly to continue" stickiness the
+   * pool system already gives generic directives.
+   */
+  ambientCommitment: AmbientCommitment;
+  /**
    * Prayer: the nudge currency. Siphoned to the player (the toon's god) from
    * completed quests -- deliberately tracked at the WorldState level, not on
    * ToonState, since it's the player's resource, not the toon's (see
@@ -122,6 +141,7 @@ export function createInitialState(): WorldState {
       kills: {},
     },
     directives: [],
+    ambientCommitment: null,
     prayer: 0,
     currentActivity: "Idle",
     log: [],

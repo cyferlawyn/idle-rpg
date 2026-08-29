@@ -113,6 +113,14 @@ prematurely.
   this both keeps the toon off an already-depleted pool and gives real variety
   across skills/hunting/quests instead of only ever alternating between two
   hardcoded actions (a real bug in the first version of this system).
+  Ambient mode additionally *commits* to whichever pick it lands on (stored
+  as an abstract intent, not a frozen concrete action) and keeps returning
+  it every tick as long as it's still valid, only re-rolling once it isn't
+  (pool depleted, or a committed quest finished/was abandoned). This fixed
+  a second stickiness bug: quests were scored "always available" with no
+  pool gating, so once pools ran low ambient mode re-rolled fresh among all
+  available quests independently every single tick -- observed as starting
+  a quest, then a different quest next tick, forever, never finishing one.
 - **Combat**: simple deterministic/RNG-light auto-battler math against tiered
   monsters. No twitch/positioning — this is a numbers loop, not an action game.
   Implemented v0: `sim/monsters.ts` (per-zone monster tiers, meadow weakest ->

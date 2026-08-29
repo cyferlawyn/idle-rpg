@@ -1,6 +1,6 @@
 import type { WorldState, Directive, DirectiveType, PoolName } from "./state";
 import { startQuest, QUESTS } from "./quests";
-import { isPoolDepleted } from "./pools";
+import { isPoolDepleted, SKILL_POOL } from "./pools";
 
 /**
  * An Action is what the decision layer decides to do this tick. Kept as a
@@ -67,23 +67,23 @@ function huntAction(state: WorldState): Action {
  * pools are comparably fresh.
  */
 interface Candidate {
-  action: Action;
+  intent: AmbientIntent;
   pool: PoolName | null;
 }
 
 function ambientCandidates(state: WorldState): Candidate[] {
   const candidates: Candidate[] = [
-    { action: { kind: "train", detail: "combat" }, pool: "stamina" },
-    { action: { kind: "train", detail: "gathering" }, pool: "energy" },
-    { action: { kind: "train", detail: "crafting" }, pool: "focus" },
-    { action: huntAction(state), pool: "stamina" },
+    { intent: { kind: "train", skill: "combat" }, pool: "stamina" },
+    { intent: { kind: "train", skill: "gathering" }, pool: "energy" },
+    { intent: { kind: "train", skill: "crafting" }, pool: "focus" },
+    { intent: { kind: "hunt" }, pool: "stamina" },
   ];
 
   for (const quest of Object.values(QUESTS)) {
     const alreadyDone = state.toon.completedQuests.includes(quest.id);
     const isActive = state.toon.activeQuest?.questId === quest.id;
     if (alreadyDone || isActive) continue;
-    candidates.push({ action: { kind: "quest", detail: quest.id }, pool: null });
+    candidates.push({ intent: { kind: "quest", questId: quest.id }, pool: null });
   }
 
   return candidates;
@@ -97,17 +97,73 @@ function poolScore(state: WorldState, pool: PoolName | null): number {
   return state.toon.pools[pool].current;
 }
 
+/**
+ * Ambient commitment is stored as an abstract intent (what to keep doing),
+ * not a frozen concrete Action -- "hunt" in particular resolves to travel
+ * OR fight depending on real toon.travel/activeFight state, and freezing
+ * the exact Action would trap the toon on "traveling" forever even after
+ * it arrives and a fight starts.
+ */
+type AmbientIntent =
+  | { kind: "train"; skill: string }
+  | { kind: "hunt" }
+  | { kind: "quest"; questId: string };
+
+function resolveIntent(state: WorldState, intent: AmbientIntent): Action {
+  switch (intent.kind) {
+    case "train":
+      return { kind: "train", detail: intent.skill };
+    case "hunt":
+      return huntAction(state);
+    case "quest":
+      return { kind: "quest", detail: intent.questId };
+  }
+}
+
+function intentStillValid(state: WorldState, intent: AmbientIntent): boolean {
+  switch (intent.kind) {
+    case "train": {
+      const pool = SKILL_POOL[intent.skill as keyof typeof SKILL_POOL];
+      return pool ? !isPoolDepleted(state, pool) : false;
+    }
+    case "hunt":
+      return !isPoolDepleted(state, "stamina");
+    case "quest":
+      // Valid if it's already the active quest (persisted), OR if it
+      // hasn't been started yet at all (activeQuest null, not completed) --
+      // that "not yet started" case covers the tick between committing to
+      // a quest and tick.ts actually calling startQuest for it.
+      if (state.toon.activeQuest?.questId === intent.questId) return true;
+      if (state.toon.activeQuest) return false; // a *different* quest is active
+      return !state.toon.completedQuests.includes(intent.questId);
+  }
+}
+
 function ambientAction(state: WorldState): Action {
+  // Stickiness: keep pursuing whatever ambient mode last committed to, as
+  // long as it's still valid -- previously ambient re-rolled a brand new
+  // pick every tick, which meant a tie among several available quests
+  // reroll independently each tick (starting a new quest, then a
+  // different one, then another...). Only re-roll once the current
+  // commitment is no longer valid.
+  if (state.ambientCommitment && intentStillValid(state, state.ambientCommitment as AmbientIntent)) {
+    return resolveIntent(state, state.ambientCommitment as AmbientIntent);
+  }
+
   const candidates = ambientCandidates(state).filter(
     (c) => c.pool === null || !isPoolDepleted(state, c.pool),
   );
-  if (candidates.length === 0) return { kind: "rest", detail: "all pools depleted" };
+  if (candidates.length === 0) {
+    state.ambientCommitment = null;
+    return { kind: "rest", detail: "all pools depleted" };
+  }
 
   const topScore = Math.max(...candidates.map((c) => poolScore(state, c.pool)));
   const topTier = candidates.filter((c) => poolScore(state, c.pool) === topScore);
 
   const pick = topTier[Math.floor(Math.random() * topTier.length)];
-  return pick.action;
+  state.ambientCommitment = pick.intent;
+  return resolveIntent(state, pick.intent);
 }
 
 /**

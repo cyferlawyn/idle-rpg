@@ -197,6 +197,8 @@ describe("ambient variety (pool-priority picking)", () => {
     state.toon.completedQuests.push("cat-in-tree", "rat-basement");
     const seen = new Set<string>();
     for (let i = 0; i < 200; i++) {
+      state.ambientCommitment = null; // force a fresh roll each iteration --
+      // this test is about scoring variety, stickiness is covered separately.
       const action = getNextAction(state);
       seen.add(action.kind === "train" ? `train:${action.detail}` : action.kind);
     }
@@ -286,5 +288,67 @@ describe("combat", () => {
     // *next* tick's action/currentActivity is the one that reflects it.
     step(state);
     expect(state.currentActivity).toMatch(/Fighting/);
+  });
+});
+
+describe("ambient stickiness (commits to one pick, does not thrash)", () => {
+  it("sticks to the same quest across ticks instead of restarting a different one every tick", () => {
+    const state = createInitialState();
+    // Deplete every pool-gated candidate so only quests remain -- this is
+    // exactly the reported bug scenario: once combat's pool ran out, the
+    // toon flickered between "start quest A" and "start quest B" every
+    // single tick, discarding whatever progress had just been made.
+    state.toon.pools.stamina.current = 0;
+    state.toon.pools.energy.current = 0;
+    state.toon.pools.focus.current = 0;
+
+    step(state); // step() calls getNextAction internally, then acts on it
+    let pick = state.toon.activeQuest?.questId;
+    expect(pick).toBeDefined();
+
+    for (let i = 0; i < 20; i++) {
+      const before = state.toon.activeQuest?.questId;
+      step(state);
+      const after = state.toon.activeQuest?.questId;
+      // A quest is allowed to change only across a *completion* boundary
+      // (before was active, now cleared/different because it finished and
+      // ambient re-rolled) -- it must never flip while still in progress.
+      if (before && after && before !== after) {
+        throw new Error(`quest changed from ${before} to ${after} while still active`);
+      }
+    }
+  });
+
+  it("drops a stale commitment and re-rolls once it's no longer valid (e.g. quest completed)", () => {
+    const state = createInitialState();
+    state.toon.pools.stamina.current = 0;
+    state.toon.pools.energy.current = 0;
+    state.toon.pools.focus.current = 0;
+
+    step(state);
+    const firstPick = state.toon.activeQuest?.questId;
+    expect(firstPick).toBeDefined();
+
+    // Simulate the committed quest finishing.
+    state.toon.completedQuests.push(firstPick as string);
+    state.toon.activeQuest = null;
+
+    const action = getNextAction(state);
+    if (action.kind === "quest") {
+      expect(action.detail).not.toBe(firstPick);
+    }
+  });
+
+  it("resumes travel-then-fight correctly even while committed to hunting ambiently", () => {
+    const state = createInitialState();
+    state.toon.pools.energy.current = 0;
+    state.toon.pools.focus.current = 0;
+    state.toon.completedQuests.push("cat-in-tree", "rat-basement");
+
+    runTicks(state, HUNT_TRAVEL_TICKS + 1);
+    // Ambient stayed committed to "hunt" the whole time, and hunt's own
+    // internal state machine (travel -> fight) still progressed normally
+    // instead of getting stuck re-rolling "travel" forever.
+    expect(state.toon.activeFight).not.toBeNull();
   });
 });
