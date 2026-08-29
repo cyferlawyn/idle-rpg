@@ -6,7 +6,7 @@ import { startQuest } from "./quests";
  * plain data object (not a function) so it's trivially loggable/testable.
  */
 export interface Action {
-  kind: "idle" | "train" | "travel" | "fight" | "quest";
+  kind: "idle" | "train" | "travel" | "fight" | "quest" | "rest";
   detail: string;
 }
 

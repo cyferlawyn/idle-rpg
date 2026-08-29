@@ -107,6 +107,66 @@ describe("tick loop", () => {
   });
 });
 
+describe("resource pools / stickiness", () => {
+  it("drains the relevant pool while training and regenerates the others", () => {
+    const state = createInitialState();
+    state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
+    step(state);
+    // combat training drains stamina...
+    expect(state.toon.pools.stamina.current).toBeLessThan(100);
+    // ...and regenerates the pools not in use (already at max, so unchanged,
+    // but exercises the non-active-pool regen path without erroring/over-capping).
+    expect(state.toon.pools.energy.current).toBe(100);
+    expect(state.toon.pools.focus.current).toBe(100);
+  });
+
+  it("consumes a generic (train) directive once its pool is depleted, unlike the old immortal-directive bug", () => {
+    const state = createInitialState();
+    state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
+    // stamina starts at 100, drains 4/tick -> hits 0 exactly at tick 25;
+    // tick 26 detects the depletion, consumes the directive, and rests
+    // (which also regens the now-idle stamina pool by 2 that same tick).
+    runTicks(state, 26);
+    expect(state.toon.pools.stamina.current).toBe(2);
+    // The directive must be gone -- this is the fix for the reported bug
+    // where a generic directive ran forever and blocked new nudges.
+    expect(state.directives.length).toBe(0);
+    expect(state.currentActivity).toBe("Resting");
+  });
+
+  it("regenerates a depleted pool over time once the toon stops that activity", () => {
+    const state = createInitialState();
+    state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
+    runTicks(state, 26); // depletes stamina, directive consumed, toon rests (regens +2 same tick)
+    expect(state.toon.pools.stamina.current).toBe(2);
+    // Force pure idle (no ambient re-pick of train) so this test is
+    // deterministic rather than dependent on the random ambient roll.
+    state.weights = { quest: 0, hunt: 0, train: 0 };
+    runTicks(state, 10);
+    expect(state.toon.pools.stamina.current).toBe(22);
+  });
+
+  it("keeps a quest directive at the front even if its pool depletes (does not abandon it)", () => {
+    const state = createInitialState();
+    state.directives.push({ type: "quest", target: "cat-in-tree", issuedAt: 0 });
+    // cat-in-tree is travel-only and completes in 3 ticks -- check mid-quest
+    // (before completion) that it isn't abandoned due to any pool logic.
+    runTicks(state, 2);
+    expect(state.toon.activeQuest).not.toBeNull();
+  });
+
+  it("a fresh nudge can now take over after the bootstrap train directive is consumed", () => {
+    const state = createInitialState();
+    state.prayer = 10;
+    state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
+    runTicks(state, 26); // consumes the train directive via exhaustion
+    const ok = issueDirective(state, "quest", "cat-in-tree");
+    expect(ok).toBe(true);
+    const action = getNextAction(state);
+    expect(action.kind).toBe("quest");
+  });
+});
+
 describe("quests data", () => {
   it("progressActiveQuest is a no-op with no active quest", () => {
     const state = createInitialState();

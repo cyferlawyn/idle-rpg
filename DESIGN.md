@@ -99,6 +99,15 @@ prematurely.
 
 - **Stats/skills**: a handful of trainable skills (combat, a gathering skill, a
   crafting skill) with XP curves. No class system yet — single toon archetype.
+- **Resource pools (stamina/energy/focus)**: each activity type drains a dedicated
+  pool while active (combat → stamina, gathering → energy, crafting/training →
+  focus) and regenerates while that activity isn't happening. This is what gives
+  the toon believable "stickiness" — commits to an activity until it's actually
+  costly to continue, rather than a random per-tick reroll — and is also the real
+  stopping condition for generic (train/hunt) directives: they're consumed once
+  their pool depletes, where quest directives deliberately are not (they stay at
+  the front of the queue and resume once the toon can act on them again, possibly
+  doing something else like resting or light gathering in the meantime).
 - **Combat**: simple deterministic/RNG-light auto-battler math against tiered
   monsters. No twitch/positioning — this is a numbers loop, not an action game.
 - **Quests**: a small quest graph (fetch/kill/deliver), enough to prove the

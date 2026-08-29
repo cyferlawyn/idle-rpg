@@ -5,6 +5,13 @@ export interface Skill {
   xp: number;
 }
 
+export type PoolName = "stamina" | "energy" | "focus";
+
+export interface ResourcePool {
+  current: number;
+  max: number;
+}
+
 /**
  * Travel is modeled as real state (destination + ticks remaining) rather than
  * an instant teleport-on-arrival, per DESIGN.md's "visual overworld" future
@@ -27,6 +34,15 @@ export interface ToonState {
   hp: number;
   maxHp: number;
   skills: Record<SkillName, Skill>;
+  /**
+   * Per-activity resource pools -- stamina drains fighting, energy drains
+   * gathering, focus drains crafting/training. Each pool regenerates while
+   * its associated activity is NOT being performed. Depletion is the
+   * stopping condition for generic (train/hunt) directives -- see
+   * DESIGN.md's stickiness note: the toon commits to an activity until it's
+   * actually costly to continue, rather than rerolling every tick.
+   */
+  pools: Record<PoolName, ResourcePool>;
   zone: string;
   travel: Travel | null;
   gold: number;
@@ -76,6 +92,11 @@ export function createInitialState(): WorldState {
         combat: { level: 1, xp: 0 },
         gathering: { level: 1, xp: 0 },
         crafting: { level: 1, xp: 0 },
+      },
+      pools: {
+        stamina: { current: 100, max: 100 },
+        energy: { current: 100, max: 100 },
+        focus: { current: 100, max: 100 },
       },
       zone: "meadow",
       travel: null,

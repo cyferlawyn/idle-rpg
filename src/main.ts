@@ -9,6 +9,9 @@ const state = createInitialState();
 
 // Bootstrap: start the toon training combat by default so there's visible
 // progress with zero player input -- proves the "plays itself" premise.
+// This directive is now correctly consumed once stamina depletes (see
+// sim/tick.ts) rather than running forever -- fixed a real bug where
+// generic directives never expired and silently blocked later nudges.
 state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
 // Seed a little starting prayer so the quest directive button is usable
 // immediately without waiting on the ambient loop -- v0 demo convenience,
@@ -24,6 +27,7 @@ app.innerHTML = `
       <div><strong id="toon-name"></strong> — HP <span id="toon-hp"></span></div>
       <div>Prayer: <span id="prayer"></span></div>
       <ul id="skills"></ul>
+      <ul id="pools"></ul>
     </section>
     <section class="stats">
       <button id="quest-btn">Nudge: do "Cat in the Tree" quest (costs prayer)</button>
@@ -49,6 +53,11 @@ function render(): void {
   const skillsEl = document.querySelector("#skills")!;
   skillsEl.innerHTML = Object.entries(state.toon.skills)
     .map(([name, skill]) => `<li>${name}: L${skill.level} (${skill.xp} xp)</li>`)
+    .join("");
+
+  const poolsEl = document.querySelector("#pools")!;
+  poolsEl.innerHTML = Object.entries(state.toon.pools)
+    .map(([name, pool]) => `<li>${name}: ${pool.current}/${pool.max}</li>`)
     .join("");
 
   const logEl = document.querySelector("#log-feed")!;

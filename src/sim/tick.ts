@@ -1,9 +1,25 @@
-import type { WorldState } from "./state";
+import type { WorldState, PoolName } from "./state";
 import { getNextAction, type Action } from "./decision";
 import { progressActiveQuest, QUESTS } from "./quests";
+import { SKILL_POOL, drainPool, regenIdlePools, isPoolDepleted } from "./pools";
 
 const XP_PER_TRAIN_TICK = 5;
 const XP_TO_LEVEL = (level: number) => level * 100;
+
+/** Which pool (if any) an action draws down while it's being performed. */
+function poolForAction(action: Action): PoolName | null {
+  switch (action.kind) {
+    case "train":
+      return SKILL_POOL[action.detail as keyof typeof SKILL_POOL] ?? null;
+    case "fight":
+      return "stamina";
+    default:
+      // travel/quest/idle don't drain a pool directly yet -- quests will
+      // once real combat/gathering steps exist; tracked as a TODO rather
+      // than over-building ahead of that (see DESIGN.md open questions).
+      return null;
+  }
+}
 
 function describeActivity(action: Action): string {
   switch (action.kind) {
@@ -19,6 +35,8 @@ function describeActivity(action: Action): string {
     }
     case "idle":
       return "Idle";
+    case "rest":
+      return "Resting";
   }
 }
 
@@ -56,6 +74,7 @@ function applyAction(state: WorldState, action: Action): void {
       }
       break;
     case "idle":
+    case "rest":
       break;
   }
   // Cap log so it doesn't grow unbounded across a long session.
@@ -63,13 +82,41 @@ function applyAction(state: WorldState, action: Action): void {
 }
 
 /**
- * Advances the world by exactly one tick: decide -> apply -> bump tick
- * counter. Pure mutation of the passed state, no timers/DOM here -- the
- * caller (UI or offline fast-forward) owns scheduling.
+ * Advances the world by exactly one tick.
+ *
+ * Order: decide -> check the relevant pool isn't already depleted (if it is,
+ * the toon rests instead this tick, and a generic directive at the front of
+ * the queue is consumed rather than left immortal) -> apply -> drain the
+ * active pool / regen the rest -> bump tick counter.
+ *
+ * Quest directives are the deliberate exception: per design, a quest stays
+ * at the top of the priority list even while its pool recovers (the toon
+ * might do something else -- gather, rest -- in between) rather than being
+ * abandoned like a generic train/hunt directive would be.
  */
 export function step(state: WorldState): void {
-  const action = getNextAction(state);
+  let action = getNextAction(state);
+  const pool = poolForAction(action);
+
+  if (pool && isPoolDepleted(state, pool)) {
+    const isQuestDirective = state.directives[0]?.type === "quest";
+    if (!isQuestDirective && state.directives[0]) {
+      // Generic directive (train/hunt): consumed on depletion rather than
+      // left running forever -- this is the fix for the "toon trains combat
+      // forever and never responds to a new nudge" bug: previously nothing
+      // ever popped a non-quest directive off the queue.
+      state.directives.shift();
+      state.log.push(`${state.toon.name} is too exhausted to continue and stops`);
+    }
+    action = { kind: "rest", detail: pool };
+  }
+
   applyAction(state, action);
+
+  const activePool = poolForAction(action);
+  if (activePool) drainPool(state, activePool);
+  regenIdlePools(state, activePool);
+
   state.currentActivity = describeActivity(action);
   state.tick += 1;
 }
