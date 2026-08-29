@@ -108,6 +108,11 @@ prematurely.
   their pool depletes, where quest directives deliberately are not (they stay at
   the front of the queue and resume once the toon can act on them again, possibly
   doing something else like resting or light gathering in the meantime).
+  Ambient (no-directive) picking scores every candidate activity by its pool's
+  current fullness, takes the highest-scoring tier, and rolls among ties --
+  this both keeps the toon off an already-depleted pool and gives real variety
+  across skills/hunting/quests instead of only ever alternating between two
+  hardcoded actions (a real bug in the first version of this system).
 - **Combat**: simple deterministic/RNG-light auto-battler math against tiered
   monsters. No twitch/positioning — this is a numbers loop, not an action game.
 - **Quests**: a small quest graph (fetch/kill/deliver), enough to prove the

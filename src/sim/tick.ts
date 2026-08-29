@@ -1,6 +1,6 @@
 import type { WorldState, PoolName } from "./state";
 import { getNextAction, type Action } from "./decision";
-import { progressActiveQuest, QUESTS } from "./quests";
+import { progressActiveQuest, startQuest, QUESTS } from "./quests";
 import { SKILL_POOL, drainPool, regenIdlePools, isPoolDepleted } from "./pools";
 
 const XP_PER_TRAIN_TICK = 5;
@@ -62,9 +62,12 @@ function applyAction(state: WorldState, action: Action): void {
       state.log.push(`${state.toon.name} fights at ${action.detail}`);
       break;
     case "quest":
-      // The active quest was started (or already running) by the decision
-      // layer; actually advancing it by one tick's worth of progress is the
-      // tick loop's job, since directives can persist across many ticks.
+      // Ambient picks and directive-driven picks both land here; start the
+      // quest if it isn't already the active one (startQuest is a safe
+      // no-op if it's already running or completed).
+      if (state.toon.activeQuest?.questId !== action.detail) {
+        startQuest(state, action.detail);
+      }
       progressActiveQuest(state);
       // Once the quest completes, quests.ts clears activeQuest and pops it
       // off completedQuests -- pop the now-finished directive so the toon

@@ -63,7 +63,6 @@ export interface WorldState {
   tick: number;
   toon: ToonState;
   directives: Directive[]; // queue, front = active
-  weights: Record<DirectiveType, number>; // ambient priority weighting (Tier A)
   /**
    * Prayer: the nudge currency. Siphoned to the player (the toon's god) from
    * completed quests -- deliberately tracked at the WorldState level, not on
@@ -106,7 +105,6 @@ export function createInitialState(): WorldState {
       completedQuests: [],
     },
     directives: [],
-    weights: { quest: 1, hunt: 1, train: 1 },
     prayer: 0,
     currentActivity: "Idle",
     log: [],

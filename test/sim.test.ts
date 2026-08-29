@@ -15,9 +15,11 @@ describe("decision layer", () => {
 
   it("falls back to ambient action when no directive is queued", () => {
     const state = createInitialState();
-    state.weights = { quest: 0, hunt: 0, train: 1 };
     const action = getNextAction(state);
-    expect(action.kind).toBe("train");
+    // All pools start full and no quest is active/completed, so the
+    // top-tier candidate set includes every skill, hunting, and both quests
+    // -- just assert it picks *something* real rather than idling.
+    expect(action.kind).not.toBe("idle");
   });
 
   it("starts the target quest when a quest directive is active", () => {
@@ -139,9 +141,10 @@ describe("resource pools / stickiness", () => {
     state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
     runTicks(state, 26); // depletes stamina, directive consumed, toon rests (regens +2 same tick)
     expect(state.toon.pools.stamina.current).toBe(2);
-    // Force pure idle (no ambient re-pick of train) so this test is
-    // deterministic rather than dependent on the random ambient roll.
-    state.weights = { quest: 0, hunt: 0, train: 0 };
+    // Force pure idle (all pools depleted) so this test is deterministic
+    // rather than dependent on the random ambient roll among top-tier ties.
+    state.toon.pools.energy.current = 0;
+    state.toon.pools.focus.current = 0;
     runTicks(state, 10);
     expect(state.toon.pools.stamina.current).toBe(22);
   });
@@ -172,5 +175,43 @@ describe("quests data", () => {
     const state = createInitialState();
     expect(() => progressActiveQuest(state)).not.toThrow();
     expect(state.toon.activeQuest).toBeNull();
+  });
+});
+
+describe("ambient variety (pool-priority picking)", () => {
+  it("never picks an activity whose pool is already depleted", () => {
+    const state = createInitialState();
+    state.toon.pools.stamina.current = 0;
+    for (let i = 0; i < 50; i++) {
+      const action = getNextAction(state);
+      if (action.kind === "train") expect(action.detail).not.toBe("combat");
+      expect(action.kind).not.toBe("travel"); // hunting also drains stamina
+    }
+  });
+
+  it("picks from every skill (not just combat) when pools are equally full", () => {
+    const state = createInitialState();
+    // Complete both quests so only the three trainable skills + hunting
+    // remain as candidates -- isolates the skill-variety behavior.
+    state.toon.completedQuests.push("cat-in-tree", "rat-basement");
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      const action = getNextAction(state);
+      seen.add(action.kind === "train" ? `train:${action.detail}` : action.kind);
+    }
+    expect(seen.has("train:combat")).toBe(true);
+    expect(seen.has("train:gathering")).toBe(true);
+    expect(seen.has("train:crafting")).toBe(true);
+    expect(seen.has("travel")).toBe(true);
+  });
+
+  it("rests when every pool is depleted and no quest is available", () => {
+    const state = createInitialState();
+    state.toon.pools.stamina.current = 0;
+    state.toon.pools.energy.current = 0;
+    state.toon.pools.focus.current = 0;
+    state.toon.completedQuests.push("cat-in-tree", "rat-basement");
+    const action = getNextAction(state);
+    expect(action.kind).toBe("rest");
   });
 });

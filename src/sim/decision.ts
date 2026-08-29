@@ -1,5 +1,6 @@
-import type { WorldState, Directive, DirectiveType } from "./state";
-import { startQuest } from "./quests";
+import type { WorldState, Directive, DirectiveType, PoolName } from "./state";
+import { startQuest, QUESTS } from "./quests";
+import { isPoolDepleted } from "./pools";
 
 /**
  * An Action is what the decision layer decides to do this tick. Kept as a
@@ -30,31 +31,65 @@ function actionForDirective(state: WorldState, directive: Directive): Action {
 }
 
 /**
- * Tier A: ambient priority weighting. Picks a directive TYPE (not a specific
- * target) proportional to the current weights, then invents a generic action
- * for it. This is the fallback "the toon does *something* useful" behavior
- * when there's no explicit directive queued.
+ * Tier A: ambient priority weighting. Previously this hardcoded a single
+ * action per directive type ("train" always meant "combat", "hunt" always
+ * meant "nearest monster"), which meant only two real activities (plus an
+ * "idle: no quest available" placeholder for the quest weight) could ever
+ * come out of ambient mode -- the reported bug where the toon only ever
+ * alternated between "training combat", "traveling towards nearest monster"
+ * and "idle".
+ *
+ * Fixed per your steer: build every candidate activity (one per trainable
+ * skill, hunting, and any quest the toon could start), score each by its
+ * relevant pool's current fullness (untouched pools -- e.g. an available
+ * quest, which is travel/step-based rather than pool-gated -- score as
+ * always-full), take the highest-scoring tier, and roll among ties. This
+ * naturally avoids re-picking an already-depleted pool (it'll never be in
+ * the top tier while others are fuller) and adds real variety once several
+ * pools are comparably fresh.
  */
-function ambientAction(weights: Record<DirectiveType, number>): Action {
-  const entries = Object.entries(weights) as [DirectiveType, number][];
-  const total = entries.reduce((sum, [, w]) => sum + Math.max(w, 0), 0);
-  if (total <= 0) return { kind: "idle", detail: "no ambient weight" };
+interface Candidate {
+  action: Action;
+  pool: PoolName | null;
+}
 
-  let roll = Math.random() * total;
-  for (const [type, weight] of entries) {
-    roll -= Math.max(weight, 0);
-    if (roll <= 0) {
-      switch (type) {
-        case "train":
-          return { kind: "train", detail: "combat" };
-        case "hunt":
-          return { kind: "travel", detail: "nearest monster" };
-        case "quest":
-          return { kind: "idle", detail: "no quest available" };
-      }
-    }
+function ambientCandidates(state: WorldState): Candidate[] {
+  const candidates: Candidate[] = [
+    { action: { kind: "train", detail: "combat" }, pool: "stamina" },
+    { action: { kind: "train", detail: "gathering" }, pool: "energy" },
+    { action: { kind: "train", detail: "crafting" }, pool: "focus" },
+    { action: { kind: "travel", detail: "nearest monster" }, pool: "stamina" },
+  ];
+
+  for (const quest of Object.values(QUESTS)) {
+    const alreadyDone = state.toon.completedQuests.includes(quest.id);
+    const isActive = state.toon.activeQuest?.questId === quest.id;
+    if (alreadyDone || isActive) continue;
+    candidates.push({ action: { kind: "quest", detail: quest.id }, pool: null });
   }
-  return { kind: "idle", detail: "fallthrough" };
+
+  return candidates;
+}
+
+function poolScore(state: WorldState, pool: PoolName | null): number {
+  // Quests (and anything else not pool-gated) are always scored as fully
+  // available so they compete fairly for the top tier rather than being
+  // permanently starved by a `null` sorting to 0/undefined.
+  if (pool === null) return state.toon.pools.stamina.max;
+  return state.toon.pools[pool].current;
+}
+
+function ambientAction(state: WorldState): Action {
+  const candidates = ambientCandidates(state).filter(
+    (c) => c.pool === null || !isPoolDepleted(state, c.pool),
+  );
+  if (candidates.length === 0) return { kind: "rest", detail: "all pools depleted" };
+
+  const topScore = Math.max(...candidates.map((c) => poolScore(state, c.pool)));
+  const topTier = candidates.filter((c) => poolScore(state, c.pool) === topScore);
+
+  const pick = topTier[Math.floor(Math.random() * topTier.length)];
+  return pick.action;
 }
 
 /**
@@ -65,7 +100,7 @@ function ambientAction(weights: Record<DirectiveType, number>): Action {
 export function getNextAction(state: WorldState): Action {
   const active = state.directives[0];
   if (active) return actionForDirective(state, active);
-  return ambientAction(state.weights);
+  return ambientAction(state);
 }
 
 /**
