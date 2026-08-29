@@ -8,7 +8,6 @@ export type SkillName =
   | "alchemy"
   | "thieving"
   | "agility";
-  | "agility";
 
 /** Ambient mode's current commitment, kept as an abstract intent (not a
  * concrete Action) so e.g. "hunt" can still resolve to travel-then-fight
@@ -129,13 +128,6 @@ export interface ToonState {
    * gameplay effect yet (weapon/precision integration is future scope per
    * unified_combat_spec.md §7); this is the state slice the UI reacts to. */
   combatStyle: CombatStyle;
-  /** Lifetime ticks spent actually traveling (Travel state active),
-   * summed across every trip ever taken. Feeds passive Agility XP (see
-   * docs/movement_agility_spec.md §4) and is available for future
-   * UI/achievements. Not itself read by the speed formula -- Agility
-   * *level* is (see §3) -- this is the passive-training input, not a
-   * second speed multiplier. */
-  distanceMoved: number;
 }
 
 export type DirectiveType = "quest" | "hunt" | "train";
@@ -223,7 +215,6 @@ export function createInitialState(): WorldState {
       kills: {},
       distanceMoved: 0,
       combatStyle: "sword_and_board",
-      distanceMoved: 0,
     },
     directives: [],
     ambientCommitment: null,

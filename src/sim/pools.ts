@@ -53,6 +53,11 @@ export const SKILL_POOL: Record<SkillName, PoolName> = {
   smithing: "concentration",
   alchemy: "concentration",
   thieving: "fatigue",
+  // Agility has no train-directive/pool -- passive travel-based training
+  // per docs/movement_agility_spec.md §4.3 explicitly never checks/drains
+  // a pool. Present only for Record<SkillName, PoolName> exhaustiveness;
+  // poolForAction's "travel" case never looks this up.
+  agility: "stamina",
 };
 
 /**

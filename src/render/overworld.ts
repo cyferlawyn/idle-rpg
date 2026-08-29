@@ -610,6 +610,7 @@ export function renderFightScreen(el: HTMLElement, state: WorldState): void {
     .join("");
 
   el.innerHTML = `
+    <div class="fight-style">${STYLE_LABELS[state.toon.combatStyle]}</div>
     <div class="fight-row">
       <div class="fight-combatant">
         <div class="fight-name">${state.toon.name}</div>

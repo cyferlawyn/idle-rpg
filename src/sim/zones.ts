@@ -40,6 +40,12 @@ export const TRAINING_ZONE: Record<SkillName, ZoneId> = {
   smithing: "village",
   alchemy: "cave",
   thieving: "village",
+  // Agility has no explicit train-directive/zone -- it trains passively
+  // from travel itself (docs/movement_agility_spec.md §4). This entry
+  // exists only to satisfy Record<SkillName, ZoneId>'s exhaustiveness;
+  // nothing reads TRAINING_ZONE.agility (no "train agility" directive is
+  // ever constructed).
+  agility: "meadow",
 };
 
 /**
@@ -75,15 +81,18 @@ export function travelTicksBetween(from: ZoneId | string, to: ZoneId | string): 
 }
 
 /** Speed bonus granted per Agility level above 1, as a fraction of base
- * travel time removed. See docs/movement_agility_spec.md §3.1. */
+ * travel time removed. E.g. level 6 -> 5 * 0.03 = 0.15 -> 15% faster.
+ * Tuned so early levels (1-10) give a noticeable but not dramatic
+ * improvement -- see docs/movement_agility_spec.md §5. */
 export const AGILITY_SPEED_BONUS_PER_LEVEL = 0.03;
 
-/** Hard ceiling on how much travel time Agility can ever discount --
- * see docs/movement_agility_spec.md §3.1. */
+/** Hard ceiling on how much travel time Agility can ever discount -- 70%
+ * means even a fully-trained toon still takes ~30% of base travel time,
+ * fast but never instant (docs/movement_agility_spec.md §3.1). */
 export const AGILITY_MAX_SPEED_BONUS = 0.7;
 
-/** Maps Agility level to a multiplier applied to base travel ticks.
- * 1.0 at level 1, floors at 0.3 (70% discount cap, reached ~L24). */
+/** Multiplier applied to base travel ticks based on Agility level. 1.0 at
+ * level 1 (no discount), floored at 0.3 (the 70% cap). */
 export function movementSpeedMultiplier(agilityLevel: number): number {
   const bonus = Math.min(
     AGILITY_MAX_SPEED_BONUS,
