@@ -38,5 +38,84 @@ li {
 .activity {
   font-size: 1.05rem;
   margin-bottom: 0.5rem;
+
   color: #ffd479;
+}
+
+.overworld-section {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+#overworld {
+  border-radius: 6px;
+  background: #14141a;
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.fight-screen {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 14, 0.92);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.fight-screen.hidden {
+  display: none;
+}
+
+.fight-row {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.fight-combatant {
+  flex: 1;
+  text-align: center;
+}
+
+.fight-name {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.hp-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: #2a2a32;
+  overflow: hidden;
+}
+
+.hp-fill {
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
+.hp-fill.toon {
+  background: #4fa3d8;
+}
+
+.hp-fill.monster {
+  background: #d84f4f;
+}
+
+.hp-text {
+  font-size: 0.8rem;
+  color: #aaa;
+  margin-top: 0.25rem;
+}
+
+.fight-vs {
+  font-weight: 700;
+  color: #888;
 }

@@ -2,6 +2,7 @@ import "./style.css";
 import { createInitialState } from "./sim/state";
 import { runTicks } from "./sim/tick";
 import { issueDirective } from "./sim/decision";
+import { initOverworldCanvas, renderOverworld, renderFightScreen } from "./render/overworld";
 
 const TICK_INTERVAL_MS = 1000;
 
@@ -29,6 +30,10 @@ app.innerHTML = `
       <ul id="skills"></ul>
       <ul id="pools"></ul>
     </section>
+    <section class="stats overworld-section">
+      <canvas id="overworld"></canvas>
+      <div id="fight-screen" class="fight-screen hidden"></div>
+    </section>
     <section class="stats">
       <button id="quest-btn">Nudge: do "Cat in the Tree" quest (costs prayer)</button>
       <button id="hunt-btn">Nudge: hunt nearby monsters (costs prayer)</button>
@@ -39,6 +44,10 @@ app.innerHTML = `
     </section>
   </div>
 `;
+
+const overworldCanvas = document.querySelector<HTMLCanvasElement>("#overworld")!;
+const overworldCtx = initOverworldCanvas(overworldCanvas);
+const fightScreenEl = document.querySelector<HTMLDivElement>("#fight-screen")!;
 
 document.querySelector("#quest-btn")!.addEventListener("click", () => {
   issueDirective(state, "quest", "cat-in-tree");
@@ -73,6 +82,9 @@ function render(): void {
     .reverse()
     .map((line) => `<li>${line}</li>`)
     .join("");
+
+  renderOverworld(overworldCtx, state);
+  renderFightScreen(fightScreenEl, state);
 }
 
 render();
