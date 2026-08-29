@@ -38,6 +38,35 @@ html, body {
   cursor: grabbing;
 }
 
+.node-tooltip {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  max-width: 240px;
+  background: rgba(20, 20, 26, 0.95);
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.node-tooltip.hidden {
+  display: none;
+}
+
+.node-tooltip-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  color: #f0f0f4;
+}
+
+.node-tooltip-line {
+  color: #b8b8c2;
+}
+
+
 .tag {
   font-size: 0.8rem;
   color: #888;

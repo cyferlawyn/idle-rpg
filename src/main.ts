@@ -3,6 +3,8 @@ import { createInitialState } from "./sim/state";
 import { runTicks } from "./sim/tick";
 import { issueDirective } from "./sim/decision";
 import { initOverworldCanvas, renderOverworld, renderFightScreen } from "./render/overworld";
+import { initNodeTooltip } from "./render/tooltip";
+import { XP_TO_LEVEL } from "./sim/xp";
 
 const TICK_INTERVAL_MS = 1000;
 
@@ -73,6 +75,7 @@ app.innerHTML = `
 const overworldCanvas = document.querySelector<HTMLCanvasElement>("#overworld")!;
 const overworld = initOverworldCanvas(overworldCanvas);
 const fightScreenEl = document.querySelector<HTMLDivElement>("#fight-screen")!;
+initNodeTooltip(overworld, document.querySelector<HTMLDivElement>(".game")!);
 
 // Full-viewport canvas: keep the backing store matched to the CSS box on
 // any resize (window resize, orientation change, devtools panel toggle,
@@ -121,8 +124,6 @@ document.querySelectorAll<HTMLButtonElement>(".hud-toggle").forEach((btn) => {
   });
 });
 applyCollapsedState();
-
-const XP_TO_LEVEL = (level: number) => level * 100;
 
 function render(): void {
   document.querySelector("#current-activity")!.textContent = state.currentActivity;
