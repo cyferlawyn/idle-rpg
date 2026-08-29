@@ -39,7 +39,7 @@ export const QUESTS: Record<string, QuestDefinition> = {
       "A child's cat is stuck up an old oak in the meadow. Rescuing it earns a " +
       "grateful family's quiet faith.",
     steps: [{ kind: "travel", target: "meadow", amount: 3 }],
-    rewardXp: { gathering: 10 },
+    rewardXp: { woodcutting: 10 },
     rewardPrayer: 5,
     weight: "side",
   },
@@ -67,7 +67,7 @@ export const QUESTS: Record<string, QuestDefinition> = {
       { kind: "travel", target: "forest", amount: 2 },
       { kind: "kill", target: "forest-wolf", amount: 4 },
     ],
-    rewardXp: { combat: 22, gathering: 8 },
+    rewardXp: { combat: 22, woodcutting: 8 },
     rewardPrayer: 12,
     weight: "side",
   },

@@ -145,9 +145,13 @@ interface Candidate {
 function ambientCandidates(state: WorldState): Candidate[] {
   const candidates: Candidate[] = [
     { intent: { kind: "train", skill: "combat" }, pool: "stamina" },
-    { intent: { kind: "train", skill: "gathering" }, pool: "energy" },
-    { intent: { kind: "train", skill: "crafting" }, pool: "focus" },
+    { intent: { kind: "train", skill: "woodcutting" }, pool: "stamina" },
+    { intent: { kind: "train", skill: "mining" }, pool: "stamina" },
+    { intent: { kind: "train", skill: "fishing" }, pool: "energy" },
+    { intent: { kind: "train", skill: "cooking" }, pool: "focus" },
+    { intent: { kind: "train", skill: "smithing" }, pool: "focus" },
     { intent: { kind: "train", skill: "alchemy" }, pool: "vitality" },
+    { intent: { kind: "train", skill: "thieving" }, pool: "nerve" },
     { intent: { kind: "hunt" }, pool: "stamina" },
   ];
 

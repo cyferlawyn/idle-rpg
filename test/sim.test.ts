@@ -8,9 +8,9 @@ import { startFight, resolveFightRound } from "../src/sim/combat";
 describe("decision layer", () => {
   it("follows an active directive over ambient weighting", () => {
     const state = createInitialState();
-    state.directives.push({ type: "train", target: "gathering", issuedAt: 0 });
+    state.directives.push({ type: "train", target: "woodcutting", issuedAt: 0 });
     const action = getNextAction(state);
-    // Gathering trains at the forest (see sim/zones.ts); the toon starts
+    // Woodcutting trains at the forest (see sim/zones.ts); the toon starts
     // in the meadow, so the directive resolves to travel there first --
     // it's still "following the directive," just via the walk step.
     expect(action.kind).toBe("travel");
@@ -146,10 +146,11 @@ describe("resource pools / stickiness", () => {
     runTicks(state, 26); // depletes stamina, directive consumed, toon rests (regens +2 same tick)
     expect(state.toon.pools.stamina.current).toBe(2);
     state.toon.completedQuests.push("cat-in-tree", "rat-basement", "wolf-pelts", "cave-clearing");
-    // Only stamina is forced empty here (energy/focus stay full) so
-    // whatever ambient picks (train:gathering/crafting, since stamina-
-    // gated hunt/train:combat are filtered out) never touches stamina --
-    // isolates pure regen math without the toon needing to "rest".
+    // Only stamina is forced empty here (energy/focus/vitality/nerve stay
+    // full) so whatever ambient picks (train:fishing/cooking/smithing/
+    // alchemy/thieving, since stamina-gated hunt/train:combat/woodcutting/
+    // mining are filtered out) never touches stamina -- isolates pure
+    // regen math without the toon needing to "rest".
     state.toon.pools.stamina.current = 0;
     runTicks(state, 10);
     expect(state.toon.pools.stamina.current).toBe(20);
@@ -197,12 +198,12 @@ describe("ambient variety (pool-priority picking)", () => {
 
   it("picks from every skill (not just combat) when pools are equally full", () => {
     const state = createInitialState();
-    // Complete both quests so only the four trainable skills + hunting
+    // Complete both quests so only the eight trainable skills + hunting
     // remain as candidates -- isolates the skill-variety behavior. Skills
     // other than combat require walking to a different zone first (see
     // sim/zones.ts), so check the *committed intent* rather than the
-    // resolved action -- a "go train gathering" pick correctly resolves to
-    // a "travel" action while the toon is still in the meadow.
+    // resolved action -- a "go train woodcutting" pick correctly resolves
+    // to a "travel" action while the toon is still in the meadow.
     state.toon.completedQuests.push("cat-in-tree", "rat-basement", "wolf-pelts", "cave-clearing");
     const seen = new Set<string>();
     for (let i = 0; i < 200; i++) {
@@ -213,9 +214,13 @@ describe("ambient variety (pool-priority picking)", () => {
       seen.add(intent?.kind === "train" ? `train:${intent.skill}` : (intent?.kind ?? "none"));
     }
     expect(seen.has("train:combat")).toBe(true);
-    expect(seen.has("train:gathering")).toBe(true);
-    expect(seen.has("train:crafting")).toBe(true);
+    expect(seen.has("train:woodcutting")).toBe(true);
+    expect(seen.has("train:mining")).toBe(true);
+    expect(seen.has("train:fishing")).toBe(true);
+    expect(seen.has("train:cooking")).toBe(true);
+    expect(seen.has("train:smithing")).toBe(true);
     expect(seen.has("train:alchemy")).toBe(true);
+    expect(seen.has("train:thieving")).toBe(true);
     expect(seen.has("hunt")).toBe(true);
   });
 
@@ -225,6 +230,7 @@ describe("ambient variety (pool-priority picking)", () => {
     state.toon.pools.energy.current = 0;
     state.toon.pools.focus.current = 0;
     state.toon.pools.vitality.current = 0;
+    state.toon.pools.nerve.current = 0;
     state.toon.completedQuests.push("cat-in-tree", "rat-basement", "wolf-pelts", "cave-clearing");
     const action = getNextAction(state);
     expect(action.kind).toBe("rest");
@@ -314,6 +320,7 @@ describe("ambient stickiness (commits to one pick, does not thrash)", () => {
     state.toon.pools.energy.current = 0;
     state.toon.pools.focus.current = 0;
     state.toon.pools.vitality.current = 0;
+    state.toon.pools.nerve.current = 0;
 
     step(state); // step() calls getNextAction internally, then acts on it
     let pick = state.toon.activeQuest?.questId;
@@ -338,6 +345,7 @@ describe("ambient stickiness (commits to one pick, does not thrash)", () => {
     state.toon.pools.energy.current = 0;
     state.toon.pools.focus.current = 0;
     state.toon.pools.vitality.current = 0;
+    state.toon.pools.nerve.current = 0;
 
     step(state);
     const firstPick = state.toon.activeQuest?.questId;

@@ -4,15 +4,24 @@ const DRAIN_PER_TICK = 4;
 const REGEN_PER_TICK = 2;
 
 /**
- * Which pool a given skill's training drains. Combat training taxes stamina
- * (the same pool actual fighting will drain once combat exists), gathering
- * taxes energy, crafting taxes focus/concentration.
+ * Which pool a given skill's training drains. Gathering/production skills
+ * are grouped by exertion type rather than each getting a bespoke pool:
+ * physical exertion (combat, woodcutting, mining) taxes stamina, outdoor
+ * patience (fishing) and precise handiwork (smithing) tax energy/focus
+ * respectively, cooking taxes focus (attention at the fire), alchemy taxes
+ * vitality (it's literally distilling life-essence per DESIGN.md flavor),
+ * and thieving taxes nerve -- a new pool for the risk/composure a sneaky
+ * skill burns through, distinct from physical stamina.
  */
 export const SKILL_POOL: Record<SkillName, PoolName> = {
   combat: "stamina",
-  gathering: "energy",
-  crafting: "focus",
+  woodcutting: "stamina",
+  mining: "stamina",
+  fishing: "energy",
+  cooking: "focus",
+  smithing: "focus",
   alchemy: "vitality",
+  thieving: "nerve",
 };
 
 /**

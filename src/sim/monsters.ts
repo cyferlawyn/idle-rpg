@@ -87,6 +87,36 @@ export const MONSTERS: Record<string, MonsterDefinition> = {
     xpReward: { combat: 65 },
     goldReward: 25,
   },
+  "mountain-harpy": {
+    id: "mountain-harpy",
+    name: "Harpy",
+    zone: "mountain",
+    hp: 45,
+    attack: 11,
+    defense: 5,
+    xpReward: { combat: 32 },
+    goldReward: 11,
+  },
+  "mountain-yeti": {
+    id: "mountain-yeti",
+    name: "Yeti",
+    zone: "mountain",
+    hp: 100,
+    attack: 16,
+    defense: 10,
+    xpReward: { combat: 70 },
+    goldReward: 28,
+  },
+  "lake-serpent": {
+    id: "lake-serpent",
+    name: "Lake Serpent",
+    zone: "lake",
+    hp: 60,
+    attack: 12,
+    defense: 7,
+    xpReward: { combat: 45 },
+    goldReward: 16,
+  },
 };
 
 /** Monsters available in a zone, weakest first -- used to pick "nearest". */

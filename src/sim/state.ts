@@ -1,4 +1,12 @@
-export type SkillName = "combat" | "gathering" | "crafting" | "alchemy";
+export type SkillName =
+  | "combat"
+  | "woodcutting"
+  | "mining"
+  | "fishing"
+  | "cooking"
+  | "smithing"
+  | "alchemy"
+  | "thieving";
 
 /** Ambient mode's current commitment, kept as an abstract intent (not a
  * concrete Action) so e.g. "hunt" can still resolve to travel-then-fight
@@ -12,7 +20,7 @@ export interface Skill {
   xp: number;
 }
 
-export type PoolName = "stamina" | "energy" | "focus" | "vitality";
+export type PoolName = "stamina" | "energy" | "focus" | "vitality" | "nerve";
 
 export interface ResourcePool {
   current: number;
@@ -128,15 +136,20 @@ export function createInitialState(): WorldState {
       maxHp: 20,
       skills: {
         combat: { level: 1, xp: 0 },
-        gathering: { level: 1, xp: 0 },
-        crafting: { level: 1, xp: 0 },
+        woodcutting: { level: 1, xp: 0 },
+        mining: { level: 1, xp: 0 },
+        fishing: { level: 1, xp: 0 },
+        cooking: { level: 1, xp: 0 },
+        smithing: { level: 1, xp: 0 },
         alchemy: { level: 1, xp: 0 },
+        thieving: { level: 1, xp: 0 },
       },
       pools: {
         stamina: { current: 100, max: 100 },
         energy: { current: 100, max: 100 },
         focus: { current: 100, max: 100 },
         vitality: { current: 100, max: 100 },
+        nerve: { current: 100, max: 100 },
       },
       zone: "meadow",
       travel: null,

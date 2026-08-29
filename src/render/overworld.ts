@@ -13,14 +13,16 @@ import { ZONE_LABELS, TRAINING_ZONE } from "../sim/zones";
 // map graph now that each zone has a real role (training ground and/or
 // monster spawns), not just an abstract id. Positions are canvas pixels.
 const ZONE_LAYOUT: Record<string, { x: number; y: number; color: string }> = {
-  meadow: { x: 80, y: 160, color: "#3f6e3a" },
-  village: { x: 220, y: 60, color: "#6e5a3a" },
-  forest: { x: 340, y: 150, color: "#2f5c3f" },
-  cave: { x: 340, y: 260, color: "#4a4a52" },
+  meadow: { x: 70, y: 220, color: "#3f6e3a" },
+  village: { x: 190, y: 130, color: "#6e5a3a" },
+  forest: { x: 320, y: 200, color: "#2f5c3f" },
+  cave: { x: 330, y: 320, color: "#4a4a52" },
+  mountain: { x: 210, y: 40, color: "#5c5c66" },
+  lake: { x: 80, y: 80, color: "#2f5b6e" },
 };
 
 const CANVAS_W = 420;
-const CANVAS_H = 320;
+const CANVAS_H = 380;
 
 function zonePos(zone: string): { x: number; y: number } {
   return ZONE_LAYOUT[zone] ?? ZONE_LAYOUT.meadow;
