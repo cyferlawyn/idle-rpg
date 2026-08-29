@@ -70,6 +70,18 @@ describe("tick loop", () => {
     expect(state.log.length).toBeLessThanOrEqual(200);
   });
 
+  it("sets a human-readable currentActivity describing the resolved action", () => {
+    const state = createInitialState();
+    state.directives.push({ type: "quest", target: "cat-in-tree", issuedAt: 0 });
+    step(state);
+    expect(state.currentActivity).toBe("Questing: The Cat in the Tree");
+
+    const trainState = createInitialState();
+    trainState.directives.push({ type: "train", target: "combat", issuedAt: 0 });
+    step(trainState);
+    expect(trainState.currentActivity).toBe("Training combat");
+  });
+
   it("completes a quest end to end via the directive queue, rewarding prayer", () => {
     const state = createInitialState();
     const quest = QUESTS["cat-in-tree"];

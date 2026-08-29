@@ -20,6 +20,7 @@ app.innerHTML = `
   <div class="game">
     <h1>idle-rpg <span class="tag">devlog build</span></h1>
     <section class="stats">
+      <div class="activity">Now: <strong id="current-activity"></strong></div>
       <div><strong id="toon-name"></strong> — HP <span id="toon-hp"></span></div>
       <div>Prayer: <span id="prayer"></span></div>
       <ul id="skills"></ul>
@@ -40,6 +41,7 @@ document.querySelector("#quest-btn")!.addEventListener("click", () => {
 });
 
 function render(): void {
+  document.querySelector("#current-activity")!.textContent = state.currentActivity;
   document.querySelector("#toon-name")!.textContent = state.toon.name;
   document.querySelector("#toon-hp")!.textContent = `${state.toon.hp}/${state.toon.maxHp}`;
   document.querySelector("#prayer")!.textContent = String(state.prayer);

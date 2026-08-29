@@ -1,9 +1,26 @@
 import type { WorldState } from "./state";
 import { getNextAction, type Action } from "./decision";
-import { progressActiveQuest } from "./quests";
+import { progressActiveQuest, QUESTS } from "./quests";
 
 const XP_PER_TRAIN_TICK = 5;
 const XP_TO_LEVEL = (level: number) => level * 100;
+
+function describeActivity(action: Action): string {
+  switch (action.kind) {
+    case "train":
+      return `Training ${action.detail}`;
+    case "travel":
+      return `Traveling to ${action.detail}`;
+    case "fight":
+      return `Fighting at ${action.detail}`;
+    case "quest": {
+      const quest = QUESTS[action.detail];
+      return `Questing: ${quest?.title ?? action.detail}`;
+    }
+    case "idle":
+      return "Idle";
+  }
+}
 
 function applyAction(state: WorldState, action: Action): void {
   switch (action.kind) {
@@ -53,6 +70,7 @@ function applyAction(state: WorldState, action: Action): void {
 export function step(state: WorldState): void {
   const action = getNextAction(state);
   applyAction(state, action);
+  state.currentActivity = describeActivity(action);
   state.tick += 1;
 }
 

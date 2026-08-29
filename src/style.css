@@ -34,3 +34,9 @@ li {
   padding: 0.15rem 0;
   font-size: 0.9rem;
 }
+
+.activity {
+  font-size: 1.05rem;
+  margin-bottom: 0.5rem;
+  color: #ffd479;
+}

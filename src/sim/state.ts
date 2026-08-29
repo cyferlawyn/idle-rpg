@@ -55,6 +55,13 @@ export interface WorldState {
    * DESIGN.md "Setting: god and paladin").
    */
   prayer: number;
+  /**
+   * Human-readable summary of what the toon is doing *right now* (this
+   * tick), e.g. "Training combat", "Questing: Cat in the Tree". Set every
+   * tick from the resolved Action so the UI never has to infer current
+   * activity by reading log history.
+   */
+  currentActivity: string;
   log: string[];
 }
 
@@ -80,6 +87,7 @@ export function createInitialState(): WorldState {
     directives: [],
     weights: { quest: 1, hunt: 1, train: 1 },
     prayer: 0,
+    currentActivity: "Idle",
     log: [],
   };
 }
