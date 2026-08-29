@@ -64,8 +64,11 @@ describe("tick loop", () => {
   it("levels up a trained skill after enough ticks", () => {
     const state = createInitialState();
     state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
-    // level 1 -> 2 needs 100 xp at 5xp/tick = 20 ticks
-    runTicks(state, 20);
+    // Isolate leveling math from stamina depletion (a separate mechanic) --
+    // give it a deep pool so the full run below is uninterrupted training.
+    state.toon.pools.stamina.current = 1_000_000;
+    // level 1 -> 2 needs round(83*1^2+100) = 183 xp at 5xp/tick = 37 ticks
+    runTicks(state, 37);
     expect(state.toon.skills.combat.level).toBe(2);
   });
 

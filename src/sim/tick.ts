@@ -6,9 +6,9 @@ import { pickMonster, startFight, resolveFightRound, regenHp } from "./combat";
 import { MONSTERS } from "./monsters";
 import { travelTicksBetween } from "./zones";
 import { HUNT_TRAVEL_TICKS } from "./decision";
+import { XP_TO_LEVEL } from "./xp";
 
 const XP_PER_TRAIN_TICK = 5;
-const XP_TO_LEVEL = (level: number) => level * 100;
 
 /** Which pool (if any) an action draws down while it's being performed. */
 function poolForAction(action: Action): PoolName | null {
