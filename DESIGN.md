@@ -135,7 +135,13 @@ prematurely.
   directive-queue targeting a specific quest works end to end. Some quests should
   plausibly read as "converting"/impressing a settlement, to justify prayer income
   narratively — but this is flavor text on generic fetch/kill/deliver quests, not a
-  distinct quest type (see Setting: systems stay generic).
+  distinct quest type (see Setting: systems stay generic). Kill-type steps route
+  through real hunting/combat (not a flat "questing" no-op): the decision layer
+  detects when the active quest's current step is a kill step, moves the toon to
+  that step's target monster's zone, and hands off to huntAction() -- fixing a bug
+  where a quest sitting on a kill step showed "Questing: ..." for many ticks with
+  zero stat/gold/kill progress, since the toon's zone never changes on its own and
+  a flat quest action does nothing once past the travel step.
 - **World**: a handful of zones with a difficulty gradient, travel time between them.
 - **Loot/inventory**: minimal — gear with flat stat bonuses, no deep itemization yet.
 - **Prayer / nudge currency**: accrues from completed quests (and later, passively

@@ -59,7 +59,7 @@ export const QUESTS: Record<string, QuestDefinition> = {
   },
 };
 
-function currentStep(quest: QuestDefinition, stepIndex: number): QuestStep | undefined {
+export function currentQuestStep(quest: QuestDefinition, stepIndex: number): QuestStep | undefined {
   return quest.steps[stepIndex];
 }
 
@@ -88,7 +88,7 @@ export function progressActiveQuest(
   const quest = QUESTS[active.questId];
   if (!quest) return;
 
-  const step = currentStep(quest, active.stepIndex);
+  const step = currentQuestStep(quest, active.stepIndex);
   if (!step) return;
 
   if (step.kind === "kill") {

@@ -142,12 +142,14 @@ describe("resource pools / stickiness", () => {
     state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
     runTicks(state, 26); // depletes stamina, directive consumed, toon rests (regens +2 same tick)
     expect(state.toon.pools.stamina.current).toBe(2);
-    // Force pure idle (all pools depleted) so this test is deterministic
-    // rather than dependent on the random ambient roll among top-tier ties.
-    state.toon.pools.energy.current = 0;
-    state.toon.pools.focus.current = 0;
+    state.toon.completedQuests.push("cat-in-tree", "rat-basement");
+    // Only stamina is forced empty here (energy/focus stay full) so
+    // whatever ambient picks (train:gathering/crafting, since stamina-
+    // gated hunt/train:combat are filtered out) never touches stamina --
+    // isolates pure regen math without the toon needing to "rest".
+    state.toon.pools.stamina.current = 0;
     runTicks(state, 10);
-    expect(state.toon.pools.stamina.current).toBe(22);
+    expect(state.toon.pools.stamina.current).toBe(20);
   });
 
   it("keeps a quest directive at the front even if its pool depletes (does not abandon it)", () => {
@@ -344,6 +346,9 @@ describe("ambient stickiness (commits to one pick, does not thrash)", () => {
     state.toon.pools.energy.current = 0;
     state.toon.pools.focus.current = 0;
     state.toon.completedQuests.push("cat-in-tree", "rat-basement");
+    // Force the commitment deterministically to hunt (train:combat also
+    // ties on full stamina, so an unforced roll could pick that instead).
+    state.ambientCommitment = { kind: "hunt" };
 
     runTicks(state, HUNT_TRAVEL_TICKS + 1);
     // Ambient stayed committed to "hunt" the whole time, and hunt's own
@@ -352,3 +357,47 @@ describe("ambient stickiness (commits to one pick, does not thrash)", () => {
     expect(state.toon.activeFight).not.toBeNull();
   });
 });
+
+describe("quest kill-steps actually route through combat (not stalled)", () => {
+  it("a quest sitting on a kill step routes into real hunting instead of doing nothing every tick", () => {
+    const state = createInitialState();
+    // Advance Rat Infestation past its travel step directly onto its kill
+    // step -- this reproduces the reported bug: the toon shows "Questing:
+    // Rat Infestation" for many ticks with zero stat/gold/kill progress,
+    // because the decision layer returned a flat "quest" action that did
+    // nothing once the step wasn't a travel step.
+    state.directives.push({ type: "quest", target: "rat-basement", issuedAt: 0 });
+    step(state); // starts the quest
+    state.toon.activeQuest!.stepIndex = 1; // jump to the kill step
+    state.toon.activeQuest!.stepProgress = 0;
+
+    step(state);
+    // Must be actually hunting (traveling or fighting), not a no-op
+    // "quest" action that never engages a monster.
+    expect(["travel", "fight"]).toContain(getActionKindFromActivity(state.currentActivity));
+  });
+
+  it("kills earned while on a quest's kill step actually progress the quest", () => {
+    const state = createInitialState();
+    state.directives.push({ type: "quest", target: "rat-basement", issuedAt: 0 });
+    step(state);
+    state.toon.activeQuest!.stepIndex = 1;
+    state.toon.activeQuest!.stepProgress = 0;
+
+    // Run enough ticks to travel to the monster and land several kills --
+    // generous budget since combat has randomness (variable rounds/kill).
+    runTicks(state, 60);
+
+    expect(state.toon.kills["village-rat"]).toBeGreaterThan(0);
+    expect(state.toon.activeQuest?.stepProgress ?? 5).toBeGreaterThan(0);
+  });
+});
+
+/** Best-effort mapping from the human-readable activity string back to a
+ * rough action kind, since currentActivity is what's asserted on above. */
+function getActionKindFromActivity(activity: string): string {
+  if (activity.startsWith("Traveling")) return "travel";
+  if (activity.startsWith("Fighting")) return "fight";
+  if (activity.startsWith("Questing")) return "quest";
+  return activity.toLowerCase();
+}

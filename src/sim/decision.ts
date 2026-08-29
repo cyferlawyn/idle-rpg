@@ -1,6 +1,7 @@
 import type { WorldState, Directive, DirectiveType, PoolName } from "./state";
-import { startQuest, QUESTS } from "./quests";
+import { startQuest, QUESTS, currentQuestStep } from "./quests";
 import { isPoolDepleted, SKILL_POOL } from "./pools";
+import { MONSTERS } from "./monsters";
 
 /**
  * An Action is what the decision layer decides to do this tick. Kept as a
@@ -29,8 +30,44 @@ function actionForDirective(state: WorldState, directive: Directive): Action {
       if (state.toon.activeQuest?.questId !== directive.target) {
         startQuest(state, directive.target);
       }
-      return { kind: "quest", detail: directive.target };
+      return questAction(state, directive.target);
   }
+}
+
+/**
+ * Resolves what a quest actually does this tick. Most step kinds (travel,
+ * gather, deliver) are still simple tick-progress placeholders and just
+ * return a plain "quest" action for tick.ts to bump forward. Kill-type
+ * steps are the exception: they only advance on a real combat kill event
+ * (see quests.ts), so a quest sitting on a kill step must actually route
+ * through hunting/fighting -- previously it returned a flat "quest" action
+ * unconditionally, which did nothing for a kill step and left the toon
+ * stuck showing "Questing: ..." with zero progress forever.
+ */
+function questAction(state: WorldState, questId: string): Action {
+  const active = state.toon.activeQuest;
+  if (active?.questId === questId) {
+    const quest = QUESTS[questId];
+    const step = quest && currentQuestStep(quest, active.stepIndex);
+    if (step?.kind === "kill") {
+      // Kill steps name a specific monster id as their target (e.g.
+      // "village-rat" for Rat Infestation), not a zone -- look up that
+      // monster's zone and move the toon there. The toon's zone never
+      // changes on its own, so without this the toon would keep fighting
+      // whatever's in its current zone forever and never land a kill event
+      // matching the quest's target monster -- the real reason Rat
+      // Infestation stalled with zero progress even after kill-steps were
+      // wired to route through combat.
+      const targetZone = MONSTERS[step.target]?.zone;
+      if (targetZone && state.toon.zone !== targetZone) {
+        state.toon.zone = targetZone;
+        state.toon.travel = null; // re-route any in-flight travel to the new zone
+        state.toon.activeFight = null;
+      }
+      return huntAction(state);
+    }
+  }
+  return { kind: "quest", detail: questId };
 }
 
 /**
@@ -116,7 +153,7 @@ function resolveIntent(state: WorldState, intent: AmbientIntent): Action {
     case "hunt":
       return huntAction(state);
     case "quest":
-      return { kind: "quest", detail: intent.questId };
+      return questAction(state, intent.questId);
   }
 }
 
