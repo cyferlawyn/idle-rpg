@@ -4,6 +4,21 @@ import { getNextAction, issueDirective, DIRECTIVE_COST, HUNT_TRAVEL_TICKS } from
 import { step, runTicks } from "../src/sim/tick";
 import { startQuest, progressActiveQuest, QUESTS } from "../src/sim/quests";
 import { startFight, resolveFightRound, isCollapsed, regenHp } from "../src/sim/combat";
+import { movementSpeedMultiplier } from "../src/sim/zones";
+import { saveState, loadState, type StorageLike } from "../src/sim/storage";
+
+function createMemStorage(): StorageLike {
+  const map = new Map<string, string>();
+  return {
+    getItem: (key) => (map.has(key) ? map.get(key)! : null),
+    setItem: (key, value) => {
+      map.set(key, value);
+    },
+    removeItem: (key) => {
+      map.delete(key);
+    },
+  };
+}
 
 describe("decision layer", () => {
   it("follows an active directive over ambient weighting", () => {
@@ -251,11 +266,30 @@ describe("combat", () => {
 
     resolveFightRound(state);
 
-    // Either still ongoing with reduced monster HP, or already resolved --
-    // either way, exactly one round's worth of change happened, not a
-    // single collapsed before/after delta with no visible steps.
+    // Either still ongoing with reduced-or-equal monster HP (a miss keeps
+    // HP unchanged that round), or already resolved -- either way, exactly
+    // one round's worth of change happened, not a single collapsed
+    // before/after delta with no visible steps. A real per-round event was
+    // recorded either way (hit/miss/block/kill), proving rounds are real.
     if (state.toon.activeFight) {
-      expect(state.toon.activeFight.monsterHp).toBeLessThan(initialHp);
+      expect(state.toon.activeFight.monsterHp).toBeLessThanOrEqual(initialHp);
+      expect(state.toon.activeFight.events.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("records distinct hit/miss/block event kinds and caps the ring buffer (task t_d4d53058)", () => {
+    const state = createInitialState();
+    startFight(state, "meadow-rat");
+    for (let i = 0; i < 60 && state.toon.activeFight; i++) {
+      resolveFightRound(state);
+    }
+    // Fight either ran to completion or hit the cap -- either way, if it's
+    // still ongoing, the ring buffer must never exceed MAX_FIGHT_EVENTS.
+    if (state.toon.activeFight) {
+      expect(state.toon.activeFight.events.length).toBeLessThanOrEqual(30);
+      const kinds = new Set(state.toon.activeFight.events.map((e) => e.kind));
+      // Over 60 rounds we should see real variety, not just "hit" forever.
+      expect(kinds.size).toBeGreaterThan(1);
     }
   });
 
@@ -497,6 +531,76 @@ describe("gathering exhaustion (fatigue pool)", () => {
   });
 });
 
+describe("crafting exhaustion (concentration pool)", () => {
+  it("depletes concentration while a crafting skill (cooking) is trained", () => {
+    const state = createInitialState();
+    state.toon.zone = "village"; // skip travel, isolate training/drain
+    state.directives.push({ type: "train", target: "cooking", issuedAt: 0 });
+    step(state);
+    expect(state.toon.pools.concentration.current).toBeLessThan(100);
+  });
+
+  it("stops the crafting activity at 0 concentration (no random reassignment, falls to rest)", () => {
+    const state = createInitialState();
+    state.toon.zone = "village";
+    state.directives.push({ type: "train", target: "cooking", issuedAt: 0 });
+    state.toon.pools.concentration.current = 0.5; // one drain tick (0.5/tick) from empty
+    step(state); // drains to 0
+    step(state); // detects depletion, consumes directive, rests (regens +0.5)
+    expect(state.toon.pools.concentration.current).toBe(0.5);
+    expect(state.directives.length).toBe(0);
+    expect(state.currentActivity).toBe("Resting");
+  });
+
+  it("clamps concentration at exactly 0 and does not re-fire termination every tick while at 0", () => {
+    const state = createInitialState();
+    state.toon.zone = "cave";
+    state.directives.push({ type: "train", target: "alchemy", issuedAt: 0 });
+    state.toon.pools.concentration.current = 0.5;
+    step(state); // depletes to exactly 0
+    expect(state.toon.pools.concentration.current).toBe(0);
+    step(state); // depletion detected, directive consumed, toon rests (regens once)
+    expect(state.directives.length).toBe(0);
+    expect(state.currentActivity).toBe("Resting");
+    // Running further ticks while resting must never go negative or throw,
+    // and must not re-consume an (already-empty) directive queue.
+    runTicks(state, 5);
+    expect(state.toon.pools.concentration.current).toBeGreaterThanOrEqual(0);
+  });
+
+  it("recovers concentration during rest/other activities once crafting stops", () => {
+    const state = createInitialState();
+    state.toon.pools.concentration.current = 0;
+    // Complete all quests and drain every other pool-gated candidate so
+    // ambient mode has nothing to do but rest -- isolates pure concentration
+    // regen math, same pattern as the existing fatigue regen test.
+    state.toon.completedQuests.push("cat-in-tree", "rat-basement", "wolf-pelts", "cave-clearing");
+    state.toon.pools.stamina.current = 0;
+    state.toon.pools.energy.current = 0;
+    state.toon.pools.focus.current = 0;
+    state.toon.pools.vitality.current = 0;
+    state.toon.pools.nerve.current = 0;
+    state.toon.pools.fatigue.current = 0;
+    runTicks(state, 10);
+    expect(state.toon.pools.concentration.current).toBeCloseTo(5, 5); // 0.5/tick * 10
+  });
+
+  it("smithing also drains the shared concentration pool", () => {
+    const state = createInitialState();
+    state.toon.zone = "village"; // smithing trains in the village too
+    state.directives.push({ type: "train", target: "smithing", issuedAt: 0 });
+    step(state);
+    expect(state.toon.pools.concentration.current).toBeLessThan(100);
+  });
+
+  it("is not touched by non-crafting activities (regenIdlePools leaves it capped at max while unused)", () => {
+    const state = createInitialState();
+    state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
+    step(state);
+    expect(state.toon.pools.concentration.current).toBe(100);
+  });
+});
+
 describe("combat exhaustion (HP) pool", () => {
   it("HP depletes from combat damage down to exactly 0, clamped (never negative)", () => {
     const state = createInitialState();
@@ -610,5 +714,75 @@ describe("combat exhaustion (HP) pool", () => {
       regenHp(state);
     }
     expect(state.toon.hp).toBeGreaterThan(0);
+  });
+});
+
+describe("agility passive training and persistence", () => {
+  it("movementSpeedMultiplier matches spec: 1.0 at L1, discounted mid-level, capped at 0.3", () => {
+    expect(movementSpeedMultiplier(1)).toBeCloseTo(1.0);
+    expect(movementSpeedMultiplier(6)).toBeCloseTo(0.85); // 5 levels above 1 * 3% = 15% off
+    expect(movementSpeedMultiplier(25)).toBeCloseTo(0.3); // cap reached (~L24+)
+    expect(movementSpeedMultiplier(100)).toBeCloseTo(0.3); // never below floor
+  });
+
+  it("grants passive Agility XP and levels up purely from repeated travel, no train directive", () => {
+    const state = createInitialState();
+    expect(state.toon.skills.agility.level).toBe(1);
+    expect(state.toon.distanceMoved).toBe(0);
+
+    // Force continuous travel by directing the toon back and forth between
+    // zones (each arrival immediately re-issues travel to the other zone),
+    // simulating "moving around the Overworld" over a long session.
+    let destination = "forest";
+    for (let i = 0; i < 2000; i++) {
+      state.directives.length = 0;
+      state.directives.push({ type: "train", target: "woodcutting", issuedAt: state.tick });
+      step(state);
+      if (!state.toon.travel && state.toon.zone === destination) {
+        destination = destination === "forest" ? "meadow" : "forest";
+      }
+    }
+
+    expect(state.toon.distanceMoved).toBeGreaterThan(0);
+    expect(state.toon.skills.agility.level).toBeGreaterThan(1);
+    expect(state.toon.skills.agility.xp).toBeGreaterThanOrEqual(0);
+  });
+
+  it("distanceMoved increments once per tick spent traveling, not once per trip", () => {
+    const state = createInitialState();
+    state.directives.push({ type: "train", target: "forest" as any, issuedAt: 0 });
+    // A single multi-tick trip to the forest (3 base ticks at L1, no discount).
+    state.directives[0] = { type: "hunt", target: "forest", issuedAt: 0 };
+    let ticks = 0;
+    while (state.toon.zone !== "forest" && ticks < 20) {
+      step(state);
+      ticks++;
+    }
+    expect(state.toon.distanceMoved).toBe(ticks);
+  });
+
+  it("travel never resolves in 0 or negative ticks even at very high Agility", () => {
+    const state = createInitialState();
+    state.toon.skills.agility.level = 999;
+    state.directives.push({ type: "hunt", target: "forest", issuedAt: 0 });
+    step(state);
+    expect(state.toon.travel).not.toBeNull();
+    expect(state.toon.travel!.totalTicks).toBeGreaterThanOrEqual(1);
+  });
+
+  it("Agility skill state (level, xp, distanceMoved) persists across save/load", () => {
+    const storage = createMemStorage();
+    const state = createInitialState();
+    state.toon.skills.agility.level = 7;
+    state.toon.skills.agility.xp = 42;
+    state.toon.distanceMoved = 1234;
+
+    saveState(state, storage, 999);
+    const loaded = loadState(storage);
+
+    expect(loaded).not.toBeNull();
+    expect(loaded!.state.toon.skills.agility.level).toBe(7);
+    expect(loaded!.state.toon.skills.agility.xp).toBe(42);
+    expect(loaded!.state.toon.distanceMoved).toBe(1234);
   });
 });
