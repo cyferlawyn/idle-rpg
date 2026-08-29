@@ -30,14 +30,33 @@ app.innerHTML = `
       <h1>idle-rpg <span class="tag">devlog build</span></h1>
       <div class="hud-body">
         <div class="activity">Now: <strong id="current-activity"></strong></div>
-        <div><strong id="toon-name"></strong> — HP <span id="toon-hp"></span></div>
         <div>Gold: <span id="gold"></span> · Prayer: <span id="prayer"></span></div>
-        <ul id="skills"></ul>
-        <ul id="pools"></ul>
         <div class="hud-actions">
           <button id="quest-btn">Nudge: do "Cat in the Tree" quest (costs prayer)</button>
           <button id="hunt-btn">Nudge: hunt nearby monsters (costs prayer)</button>
         </div>
+      </div>
+    </section>
+
+    <section class="hud-panel hud-combat" id="hud-combat">
+      <button class="hud-toggle" data-target="hud-combat" aria-label="Collapse">▾</button>
+      <h2>Combat</h2>
+      <div class="hud-body">
+        <div class="combat-name"><strong id="toon-name"></strong> <span id="combat-badge" class="combat-badge"></span></div>
+        <div class="hud-bar-row">
+          <span class="hud-bar-label">HP</span>
+          <div class="hud-bar"><div id="hp-bar-fill" class="hud-bar-fill hp"></div></div>
+          <span id="toon-hp" class="hud-bar-text"></span>
+        </div>
+        <div id="pools" class="hud-pools"></div>
+      </div>
+    </section>
+
+    <section class="hud-panel hud-skills" id="hud-skills">
+      <button class="hud-toggle" data-target="hud-skills" aria-label="Collapse">▾</button>
+      <h2>Skills</h2>
+      <div class="hud-body">
+        <div id="skills" class="hud-skills-list"></div>
       </div>
     </section>
 
@@ -103,6 +122,8 @@ document.querySelectorAll<HTMLButtonElement>(".hud-toggle").forEach((btn) => {
 });
 applyCollapsedState();
 
+const XP_TO_LEVEL = (level: number) => level * 100;
+
 function render(): void {
   document.querySelector("#current-activity")!.textContent = state.currentActivity;
   document.querySelector("#toon-name")!.textContent = state.toon.name;
@@ -110,14 +131,43 @@ function render(): void {
   document.querySelector("#gold")!.textContent = String(state.toon.gold);
   document.querySelector("#prayer")!.textContent = String(state.prayer);
 
+  const hpPct = Math.max(0, Math.round((state.toon.hp / state.toon.maxHp) * 100));
+  const hpFill = document.querySelector<HTMLDivElement>("#hp-bar-fill")!;
+  hpFill.style.width = `${hpPct}%`;
+  hpFill.classList.toggle("low", hpPct <= 25);
+
+  const badge = document.querySelector<HTMLSpanElement>("#combat-badge")!;
+  if (state.toon.activeFight) {
+    badge.textContent = "IN COMBAT";
+    badge.classList.add("active");
+  } else {
+    badge.textContent = "";
+    badge.classList.remove("active");
+  }
+
   const skillsEl = document.querySelector("#skills")!;
   skillsEl.innerHTML = Object.entries(state.toon.skills)
-    .map(([name, skill]) => `<li>${name}: L${skill.level} (${skill.xp} xp)</li>`)
+    .map(([name, skill]) => {
+      const needed = XP_TO_LEVEL(skill.level);
+      const pct = Math.min(100, Math.round((skill.xp / needed) * 100));
+      return `
+        <div class="skill-row">
+          <div class="skill-row-label"><span>${name}</span><span>L${skill.level}</span></div>
+          <div class="hud-bar"><div class="hud-bar-fill xp" style="width:${pct}%"></div></div>
+        </div>`;
+    })
     .join("");
 
   const poolsEl = document.querySelector("#pools")!;
   poolsEl.innerHTML = Object.entries(state.toon.pools)
-    .map(([name, pool]) => `<li>${name}: ${pool.current}/${pool.max}</li>`)
+    .map(([name, pool]) => {
+      const pct = Math.max(0, Math.round((pool.current / pool.max) * 100));
+      return `
+        <div class="hud-bar-row">
+          <span class="hud-bar-label">${name}</span>
+          <div class="hud-bar"><div class="hud-bar-fill pool" style="width:${pct}%"></div></div>
+        </div>`;
+    })
     .join("");
 
   const logEl = document.querySelector("#log-feed")!;
