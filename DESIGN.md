@@ -178,19 +178,21 @@ idle-rpg/
 Two long-term concepts worth recording while fresh, so v0 systems don't
 accidentally foreclose them later. Neither should influence v0 build priorities.
 
-### Faith spend spectrum: nudge vs. divine intervention
+### Divine terminology: inspiration vs. intervention
 
-Faith/nudge currency eventually splits into two distinct spend categories, not one
-undifferentiated pool:
+Faith/prayer currency eventually splits into two distinct spend categories, not one
+undifferentiated pool. Naming, locked now:
 
-- **Nudge (steering)** — the existing three-tier model (ambient weighting →
-  directive queue → soft override). Biases what the toon *chooses* to do; the toon
-  still has to succeed on its own.
-- **Divine intervention (miracle)** — direct, guaranteed alteration of an outcome:
+- **Divine Inspiration (steering)** — the existing three-tier model (ambient
+  weighting → directive queue → soft override). Biases what the toon *chooses* to
+  do; the toon still has to succeed on its own. This is the name for what v0
+  currently calls a "directive" in code — an inspiration the player plants, not a
+  command they issue.
+- **Divine Intervention (miracle)** — direct, guaranteed alteration of an outcome:
   buff the toon mid-fight, curse an enemy, make gathering more abundant, and
-  eventually **resurrection**. More expensive than nudging, narratively framed as an
-  actual miracle rather than a suggestion, and should stay visibly distinct in the
-  UI/spend model from nudge tiers — if the two are numerically interchangeable,
+  eventually **resurrection**. More expensive than inspiration, narratively framed as
+  an actual miracle rather than a suggestion, and should stay visibly distinct in the
+  UI/spend model from inspiration — if the two are numerically interchangeable,
   players will always pick whichever is cheaper and the flavor split disappears.
 
 Resurrection matters beyond flavor: it's the answer to "the toon can die while the
