@@ -8,10 +8,12 @@ import { ZONE_LABELS, TRAINING_ZONE } from "../sim/zones";
  * DESIGN.md's constraint, sim/ has zero knowledge this exists. Any future
  * renderer swap (better tiles, a real 2D lib) only touches this file.
  *
- * v0.3: canvas is a full-viewport layer with a real camera (pan + zoom)
- * instead of a fixed-size box laid out in document flow. World-space
- * coordinates (ZONE_LAYOUT etc.) are unchanged; the camera just decides
- * which slice of world space maps to which pixels each frame.
+ * v0.4: regions are drawn as soft boundary blobs (not just a center dot),
+ * every skilling/combat node gets its own icon glyph instead of a plain
+ * colored dot, and nodes are now real clickable hit targets -- world-space
+ * node positions + metadata are recomputed each render and exposed on the
+ * handle so a future tooltip layer (see t_75412a55) can read them, and a
+ * click callback fires with the node under the pointer.
  */
 
 // Fixed layout for the v0 zones in WORLD-SPACE units (not canvas pixels --
@@ -35,8 +37,49 @@ for (const [skill, zone] of Object.entries(TRAINING_ZONE)) {
   (ZONE_SKILLS[zone] ??= []).push(skill);
 }
 
-/**
- * The toon's current draw position (world-space): its home zone if
+/** Glyph shown for each trainable skill's node icon. Plain unicode symbols
+ * rather than image assets -- v0 has no art pipeline (see DESIGN.md), and
+ * these render fine via system-ui/emoji fallback in any modern browser. */
+const SKILL_ICONS: Record<string, string> = {
+  combat: "⚔",
+  woodcutting: "🪓",
+  mining: "⛏",
+  fishing: "🎣",
+  cooking: "🍲",
+  smithing: "🔨",
+  alchemy: "🧪",
+  thieving: "🗝",
+};
+
+/** Glyph for a monster/combat node, by rough danger tier (hp) so tougher
+ * spawns read visually distinct at a glance without needing a tooltip. */
+function monsterIcon(hp: number): string {
+  if (hp >= 80) return "💀";
+  if (hp >= 40) return "👹";
+  return "🐀";
+}
+
+export type NodeKind = "skill" | "monster";
+
+/** A single clickable/hoverable map node: a skilling spot or a monster
+ * spawn. World-space position + enough metadata for a future tooltip
+ * (t_75412a55) to render name/type/requirements without recomputing
+ * layout itself. */
+export interface OverworldNode {
+  id: string;
+  kind: NodeKind;
+  name: string;
+  zone: string;
+  x: number;
+  y: number;
+  /** World-space radius this node currently occupies (already includes
+   * the 1/zoom compensation used at render time), for hit-testing. */
+  radius: number;
+  /** skill name for kind==="skill", monster id for kind==="monster". */
+  refId: string;
+}
+
+/** The toon's current draw position (world-space): its home zone if
  * stationary, or interpolated along the straight line between travel.from
  * and travel.to based on real travel progress -- genuine simulation state
  * driving the pixel position, not a canned animation.
@@ -91,10 +134,21 @@ const MAX_ZOOM = 4;
 export interface OverworldHandle {
   canvas: HTMLCanvasElement;
   camera: Camera;
+  /** Nodes from the most recent renderOverworld() call, in world-space --
+   * used for click hit-testing and available to a future tooltip layer. */
+  nodes: OverworldNode[];
   /** Resize the backing store to match the canvas's current CSS box. */
   resize(): void;
   /** Recenter + fit the camera so the whole map is visible (call once on init / resize). */
   fitToView(): void;
+  /** Register a callback fired with the node under the pointer on a real
+   * click (pointerdown+up with negligible movement -- a drag-to-pan does
+   * NOT fire this). Returns an unsubscribe function. */
+  onNodeClick(cb: (node: OverworldNode) => void): () => void;
+  /** Hit-test a CSS-pixel point (relative to the canvas's bounding rect)
+   * against the current node set. Exposed standalone so hover-based UI
+   * (tooltips) can reuse the same logic outside of a click. */
+  nodeAt(px: number, py: number): OverworldNode | null;
   destroy(): void;
 }
 
@@ -119,6 +173,9 @@ export function initOverworldCanvas(canvas: HTMLCanvasElement): OverworldHandle 
     y: (bounds.minY + bounds.maxY) / 2,
     zoom: 1,
   };
+
+  let nodes: OverworldNode[] = [];
+  const clickListeners = new Set<(node: OverworldNode) => void>();
 
   function resize(): void {
     const dpr = window.devicePixelRatio || 1;
@@ -147,10 +204,12 @@ export function initOverworldCanvas(canvas: HTMLCanvasElement): OverworldHandle 
   // --- Pan (mouse drag + single-finger touch) ---
   let dragging = false;
   let lastPx = { x: 0, y: 0 };
+  let dragDistance = 0;
 
   function onPointerDown(e: PointerEvent): void {
     dragging = true;
     lastPx = { x: e.clientX, y: e.clientY };
+    dragDistance = 0;
     canvas.setPointerCapture(e.pointerId);
   }
 
@@ -159,9 +218,16 @@ export function initOverworldCanvas(canvas: HTMLCanvasElement): OverworldHandle 
     const dx = e.clientX - lastPx.x;
     const dy = e.clientY - lastPx.y;
     lastPx = { x: e.clientX, y: e.clientY };
+    dragDistance += Math.hypot(dx, dy);
     camera.x -= dx / camera.zoom;
     camera.y -= dy / camera.zoom;
   }
+
+  // A "click" (as opposed to a pan/drag) is a pointer up with negligible
+  // total travel since pointerdown -- this threshold is generous enough to
+  // absorb hand tremor / touch jitter without mistaking an actual small
+  // pan for a click.
+  const CLICK_DRAG_THRESHOLD_PX = 6;
 
   function onPointerUp(e: PointerEvent): void {
     dragging = false;
@@ -169,6 +235,13 @@ export function initOverworldCanvas(canvas: HTMLCanvasElement): OverworldHandle 
       canvas.releasePointerCapture(e.pointerId);
     } catch {
       // no-op: capture may already be released
+    }
+    if (dragDistance <= CLICK_DRAG_THRESHOLD_PX && clickListeners.size > 0) {
+      const rect = canvas.getBoundingClientRect();
+      const node = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
+      if (node) {
+        for (const cb of clickListeners) cb(node);
+      }
     }
   }
 
@@ -200,6 +273,20 @@ export function initOverworldCanvas(canvas: HTMLCanvasElement): OverworldHandle 
       x: camera.x + (px - viewW / 2) / camera.zoom,
       y: camera.y + (py - viewH / 2) / camera.zoom,
     };
+  }
+
+  function nodeAt(px: number, py: number): OverworldNode | null {
+    const world = screenToWorld(px, py);
+    let best: OverworldNode | null = null;
+    let bestDist = Infinity;
+    for (const node of nodes) {
+      const d = Math.hypot(world.x - node.x, world.y - node.y);
+      if (d <= node.radius && d < bestDist) {
+        best = node;
+        bestDist = d;
+      }
+    }
+    return best;
   }
 
   // --- Touch pinch-to-zoom (two-finger) ---
@@ -254,11 +341,22 @@ export function initOverworldCanvas(canvas: HTMLCanvasElement): OverworldHandle 
 
   fitToView();
 
-  return {
+  const handle: OverworldHandle = {
     canvas,
     camera,
+    get nodes(): OverworldNode[] {
+      return nodes;
+    },
+    set nodes(v: OverworldNode[]) {
+      nodes = v;
+    },
     resize,
     fitToView,
+    onNodeClick(cb: (node: OverworldNode) => void): () => void {
+      clickListeners.add(cb);
+      return () => clickListeners.delete(cb);
+    },
+    nodeAt,
     destroy(): void {
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
@@ -269,8 +367,59 @@ export function initOverworldCanvas(canvas: HTMLCanvasElement): OverworldHandle 
       canvas.removeEventListener("touchmove", onTouchMove);
       canvas.removeEventListener("touchend", onTouchEnd);
       canvas.removeEventListener("touchcancel", onTouchEnd);
+      clickListeners.clear();
     },
   };
+  return handle;
+}
+
+/** Recompute every node's world-space position + hit radius for the
+ * current tick. Pure function of the zone layout (positions are static;
+ * only which monsters/skills exist per zone can vary), split out from
+ * renderOverworld so hit-testing and drawing always agree on where nodes
+ * actually are. */
+function computeNodes(): OverworldNode[] {
+  const nodes: OverworldNode[] = [];
+  for (const [id, z] of Object.entries(ZONE_LAYOUT)) {
+    const r = 24;
+
+    const monsters = monstersInZone(id);
+    monsters.forEach((m, idx) => {
+      const angle = (idx / Math.max(1, monsters.length)) * Math.PI * 2 - Math.PI / 2;
+      const ring = r * (34 / 24);
+      nodes.push({
+        id: `monster:${m.id}`,
+        kind: "monster",
+        name: m.name,
+        zone: id,
+        x: z.x + Math.cos(angle) * ring,
+        y: z.y + Math.sin(angle) * ring,
+        radius: 9,
+        refId: m.id,
+      });
+    });
+
+    const skills = ZONE_SKILLS[id] ?? [];
+    skills.forEach((skill, idx) => {
+      // Spread multiple skill nodes around the zone's "inner" ring so a
+      // town with several trade skills (village: cooking/smithing/
+      // thieving) doesn't stack them all on one point.
+      const angle =
+        (idx / Math.max(1, skills.length)) * Math.PI * 2 - Math.PI / 2 + Math.PI / skills.length;
+      const ring = r * (30 / 24);
+      nodes.push({
+        id: `skill:${id}:${skill}`,
+        kind: "skill",
+        name: skill,
+        zone: id,
+        x: z.x + Math.cos(angle) * ring,
+        y: z.y + Math.sin(angle) * ring,
+        radius: 10,
+        refId: skill,
+      });
+    });
+  }
+  return nodes;
 }
 
 export function renderOverworld(handle: OverworldHandle, state: WorldState): void {
@@ -279,6 +428,11 @@ export function renderOverworld(handle: OverworldHandle, state: WorldState): voi
   const dpr = window.devicePixelRatio || 1;
   const viewW = canvas.width / dpr;
   const viewH = canvas.height / dpr;
+
+  // Recompute nodes every frame (cheap -- a handful of zones/monsters) and
+  // publish on the handle for hit-testing / a future tooltip layer.
+  const nodes = computeNodes();
+  handle.nodes = nodes;
 
   ctx.save();
   // Reset then scale for devicePixelRatio so all subsequent drawing is in
@@ -315,19 +469,33 @@ export function renderOverworld(handle: OverworldHandle, state: WorldState): voi
     }
   }
 
-  // Zones, with their monster spawns and training-ground markers laid
-  // out around the hub so the toon visibly has somewhere to walk to.
-  // Radii/fonts are divided by zoom so icons stay a legible, roughly
-  // constant screen size across zoom levels instead of shrinking to
-  // illegibility when zoomed out or ballooning when zoomed in.
+  // Regions: a soft boundary blob behind each zone's nodes, so "region"
+  // reads as an actual area on the map rather than just a center dot.
+  // Radius/fonts are divided by zoom so icons/labels stay a legible,
+  // roughly constant screen size across zoom levels instead of shrinking
+  // to illegibility when zoomed out or ballooning when zoomed in.
   for (const [id, z] of zones) {
     const isCurrent = state.toon.zone === id;
     const label = ZONE_LABELS[id as keyof typeof ZONE_LABELS] ?? id;
     const r = 24 / camera.zoom;
+    const boundaryR = r * (52 / 24);
 
     ctx.beginPath();
     ctx.fillStyle = z.color;
-    ctx.arc(z.x, z.y, r, 0, Math.PI * 2);
+    ctx.globalAlpha = 0.22;
+    ctx.arc(z.x, z.y, boundaryR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = z.color;
+    ctx.lineWidth = 1.5 / camera.zoom;
+    ctx.setLineDash([5 / camera.zoom, 4 / camera.zoom]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Zone home marker + highlight ring if the toon is currently here.
+    ctx.beginPath();
+    ctx.fillStyle = z.color;
+    ctx.arc(z.x, z.y, r * 0.4, 0, Math.PI * 2);
     ctx.fill();
     if (isCurrent) {
       ctx.strokeStyle = "#e6c34a";
@@ -335,38 +503,36 @@ export function renderOverworld(handle: OverworldHandle, state: WorldState): voi
       ctx.stroke();
     }
 
+    // Region/location name label, placed below the boundary blob.
     ctx.fillStyle = "#e6e6ea";
-    ctx.font = `${11 / camera.zoom}px system-ui, sans-serif`;
+    ctx.font = `${13 / camera.zoom}px system-ui, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillText(label, z.x, z.y + r * (40 / 24));
+    ctx.fillText(label, z.x, z.y + boundaryR + 14 / camera.zoom);
+  }
 
-    // Monster markers: small red dots ringing the zone, one per monster
-    // defined there (monsters.ts), labeled on hover-equivalent (always-on
-    // tiny text since there's no hover in this v0 canvas).
-    const monsters = monstersInZone(id);
-    monsters.forEach((_m, idx) => {
-      const angle = (idx / Math.max(1, monsters.length)) * Math.PI * 2 - Math.PI / 2;
-      const ring = r * (34 / 24);
-      const mx = z.x + Math.cos(angle) * ring;
-      const my = z.y + Math.sin(angle) * ring;
-      ctx.beginPath();
-      ctx.fillStyle = "#d84f4f";
-      ctx.arc(mx, my, 4 / camera.zoom, 0, Math.PI * 2);
-      ctx.fill();
-    });
+  // Skilling/combat node icons -- each a small clickable circle with a
+  // glyph, sized so it stays legible (and a real hit target) across the
+  // whole zoom range rather than shrinking below tap-friendly size.
+  for (const node of nodes) {
+    const iconR = Math.max(7, node.radius) / camera.zoom;
+    const glyph =
+      node.kind === "skill"
+        ? (SKILL_ICONS[node.refId] ?? "❔")
+        : monsterIcon(MONSTERS[node.refId]?.hp ?? 0);
 
-    // Training-ground marker: a small anvil-ish square offset from the
-    // zone if any skill trains here.
-    const skills = ZONE_SKILLS[id];
-    if (skills?.length) {
-      const size = 8 / camera.zoom;
-      ctx.fillStyle = "#4fa3d8";
-      ctx.fillRect(z.x - r * (30 / 24), z.y - r * (34 / 24), size, size);
-      ctx.font = `${8 / camera.zoom}px system-ui, sans-serif`;
-      ctx.fillStyle = "#8ec7e8";
-      ctx.textAlign = "center";
-      ctx.fillText(skills.join("/"), z.x, z.y - r * (40 / 24));
-    }
+    ctx.beginPath();
+    ctx.fillStyle = node.kind === "monster" ? "#3a1f1f" : "#1f2c3a";
+    ctx.arc(node.x, node.y, iconR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = node.kind === "monster" ? "#d84f4f" : "#4fa3d8";
+    ctx.lineWidth = 1.5 / camera.zoom;
+    ctx.stroke();
+
+    ctx.font = `${(iconR * 1.3).toFixed(1)}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(glyph, node.x, node.y);
+    ctx.textBaseline = "alphabetic";
   }
 
   // Toon marker
