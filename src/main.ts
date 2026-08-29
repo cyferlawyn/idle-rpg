@@ -7,6 +7,7 @@ import { initNodeTooltip } from "./render/tooltip";
 import { XP_TO_LEVEL } from "./sim/xp";
 import { cycleCombatStyle, STYLE_LABELS } from "./sim/combat";
 import { loadState, setupAutosave } from "./sim/storage";
+import { fastForwardOffline, type OfflineSummary } from "./sim/offline";
 
 const TICK_INTERVAL_MS = 1000;
 const AUTOSAVE_INTERVAL_MS = 30_000;
@@ -17,6 +18,16 @@ const AUTOSAVE_INTERVAL_MS = 30_000;
 // discarded so that follow-up work doesn't have to re-read storage.
 const loadedSave = loadState();
 const state = loadedSave ? loadedSave.state : createInitialState();
+
+// If we restored a save, fast-forward the sim to cover the wall-clock gap
+// since it was last written (capped at 24h inside fastForwardOffline).
+// Deferred until after the DOM/render() are set up below so the summary
+// report can be shown as an overlay once the HUD exists.
+let offlineSummary: OfflineSummary | null = null;
+if (loadedSave) {
+  const elapsedSeconds = Math.max(0, (Date.now() - loadedSave.savedAt) / 1000);
+  offlineSummary = fastForwardOffline(state, elapsedSeconds);
+}
 
 if (!loadedSave) {
   // Bootstrap: start the toon training combat by default so there's visible
@@ -39,6 +50,7 @@ app.innerHTML = `
   <div class="game">
     <canvas id="overworld"></canvas>
     <div id="fight-screen" class="fight-screen hidden"></div>
+    <div id="offline-summary" class="offline-summary hidden"></div>
 
     <section class="hud-panel hud-stats" id="hud-stats">
       <button class="hud-toggle" data-target="hud-stats" aria-label="Collapse">▾</button>
@@ -213,6 +225,47 @@ function render(): void {
 }
 
 render();
+
+function renderOfflineSummary(summary: OfflineSummary): void {
+  if (summary.ticksSimulated <= 0) return;
+  const el = document.querySelector<HTMLDivElement>("#offline-summary")!;
+  const hours = Math.floor(summary.elapsedSecondsUsed / 3600);
+  const minutes = Math.floor((summary.elapsedSecondsUsed % 3600) / 60);
+  const timeStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+  const xpLines = Object.entries(summary.xpGained)
+    .map(([name, xp]) => {
+      const lvl = summary.levelsGained[name as keyof typeof summary.levelsGained];
+      return `<li>${name}: +${xp} xp${lvl ? ` (+${lvl} level${lvl > 1 ? "s" : ""})` : ""}</li>`;
+    })
+    .join("");
+  const killLines = Object.entries(summary.killsGained)
+    .map(([id, count]) => `<li>${id}: ${count}</li>`)
+    .join("");
+  const questLines = summary.questsCompleted.map((q) => `<li>${q}</li>`).join("");
+
+  el.innerHTML = `
+    <div class="offline-summary-card">
+      <h2>Welcome back</h2>
+      <p>Your toon kept going for <strong>${timeStr}</strong> while you were away.</p>
+      <ul class="offline-summary-stats">
+        <li>Gold: +${summary.goldGained}</li>
+        <li>Prayer: +${summary.prayerGained}</li>
+      </ul>
+      ${xpLines ? `<h3>Skills</h3><ul>${xpLines}</ul>` : ""}
+      ${killLines ? `<h3>Kills</h3><ul>${killLines}</ul>` : ""}
+      ${questLines ? `<h3>Quests completed</h3><ul>${questLines}</ul>` : ""}
+      <button id="offline-summary-close">Continue</button>
+    </div>`;
+  el.classList.remove("hidden");
+  document.querySelector("#offline-summary-close")!.addEventListener("click", () => {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+  });
+}
+
+if (offlineSummary) renderOfflineSummary(offlineSummary);
+
 setInterval(() => {
   runTicks(state, 1);
   render();

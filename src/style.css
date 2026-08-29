@@ -332,6 +332,62 @@ li {
   z-index: 15;
 }
 
+/* Offline fast-forward summary: a full-viewport modal overlay shown once
+   on load when a save was restored and time actually elapsed (see
+   task t_4b3b86a8 / src/sim/offline.ts). */
+.offline-summary {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 50;
+}
+
+.offline-summary.hidden {
+  display: none;
+}
+
+.offline-summary-card {
+  background: rgba(24, 24, 30, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  padding: 1.5rem 1.75rem;
+  width: min(90vw, 420px);
+  max-height: 80vh;
+  overflow-y: auto;
+  color: #eee;
+}
+
+.offline-summary-card h2 {
+  margin: 0 0 0.5rem;
+}
+
+.offline-summary-card h3 {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.95rem;
+  opacity: 0.85;
+}
+
+.offline-summary-card ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.offline-summary-stats {
+  list-style: none;
+  padding-left: 0;
+  display: flex;
+  gap: 1.25rem;
+}
+
+.offline-summary-card button {
+  margin-top: 1.25rem;
+  width: 100%;
+}
+
 .fight-screen.hidden {
   display: none;
 }
