@@ -397,11 +397,17 @@ describe("quest kill-steps actually route through combat (not stalled)", () => {
     state.toon.activeQuest!.stepProgress = 0;
 
     // Run enough ticks to travel to the monster and land several kills --
-    // generous budget since combat has randomness (variable rounds/kill).
-    runTicks(state, 60);
+    // generous budget since combat has randomness (variable rounds/kill),
+    // and a fled/hurt toon now rests to recover HP before re-engaging
+    // (see combat.ts RECOVERED_HP_FRACTION) rather than instantly retrying.
+    // Note: with several quests now available, ambient behavior may pick
+    // up a *new* quest once rat-basement completes within this budget, so
+    // assert on the kill count and completion, not on activeQuest still
+    // pointing at rat-basement's own stepProgress.
+    runTicks(state, 200);
 
     expect(state.toon.kills["village-rat"]).toBeGreaterThan(0);
-    expect(state.toon.activeQuest?.stepProgress ?? 5).toBeGreaterThan(0);
+    expect(state.toon.completedQuests).toContain("rat-basement");
   });
 });
 

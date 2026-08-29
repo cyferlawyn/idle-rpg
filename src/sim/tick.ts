@@ -2,7 +2,7 @@ import type { WorldState, PoolName } from "./state";
 import { getNextAction, type Action } from "./decision";
 import { progressActiveQuest, startQuest, QUESTS } from "./quests";
 import { SKILL_POOL, drainPool, regenIdlePools, isPoolDepleted } from "./pools";
-import { pickMonster, startFight, resolveFightRound } from "./combat";
+import { pickMonster, startFight, resolveFightRound, regenHp } from "./combat";
 import { MONSTERS } from "./monsters";
 import { travelTicksBetween } from "./zones";
 import { HUNT_TRAVEL_TICKS } from "./decision";
@@ -158,6 +158,7 @@ export function step(state: WorldState): void {
   const activePool = poolForAction(action);
   if (activePool) drainPool(state, activePool);
   regenIdlePools(state, activePool);
+  regenHp(state);
 
   state.currentActivity = describeActivity(action);
   state.tick += 1;

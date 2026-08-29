@@ -7,7 +7,31 @@ import { ZONE_IDS, travelTicksBetween } from "./zones";
 // Intervention/resurrection exists (see DESIGN.md future scope) -- v0 has
 // no real death state, just a costly retreat.
 const FLEE_HP_FRACTION = 0.25;
+// Recovery threshold: after fleeing, the toon won't re-engage combat until
+// back above this fraction of max HP. Without this, a toon at exactly the
+// flee threshold immediately re-hunts the same zone next tick, re-engages
+// the same monster at the same critically low HP, and flees again --
+// stuck in an endless fight/flee/retry loop with zero net progress.
+const RECOVERED_HP_FRACTION = 0.6;
 const VARIANCE = 0.25; // +/- 25% swing per hit, per your steer ("small randomness")
+const HP_REGEN_PER_TICK = 1;
+
+/** Whether the toon is at/above the recovery threshold and safe to hunt. */
+export function isRecovered(state: WorldState): boolean {
+  return state.toon.hp / state.toon.maxHp >= RECOVERED_HP_FRACTION;
+}
+
+/**
+ * Passively regenerates HP by a small fixed amount, capped at max --
+ * called once per tick whenever the toon isn't actively fighting (fight
+ * rounds have their own HP deltas from taking damage). This is what lets
+ * a fled toon actually recover instead of sitting at low HP forever with
+ * nothing but time-since-flee gating the next hunt attempt.
+ */
+export function regenHp(state: WorldState): void {
+  if (state.toon.activeFight) return;
+  state.toon.hp = Math.min(state.toon.maxHp, state.toon.hp + HP_REGEN_PER_TICK);
+}
 
 function rollDamage(attack: number, defense: number): number {
   const base = Math.max(1, attack - defense);

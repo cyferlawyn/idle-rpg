@@ -52,7 +52,6 @@ export interface ActiveFight {
   monsterId: string;
   monsterHp: number;
 }
-
 export interface ToonState {
   name: string;
   hp: number;

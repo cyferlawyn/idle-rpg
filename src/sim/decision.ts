@@ -2,7 +2,7 @@ import type { WorldState, Directive, DirectiveType, PoolName } from "./state";
 import { startQuest, QUESTS, currentQuestStep } from "./quests";
 import { isPoolDepleted, SKILL_POOL } from "./pools";
 import { MONSTERS } from "./monsters";
-import { pickHuntZone } from "./combat";
+import { pickHuntZone, isRecovered } from "./combat";
 import { TRAINING_ZONE } from "./zones";
 
 /**
@@ -100,6 +100,12 @@ function questAction(state: WorldState, questId: string): Action {
 function huntAction(state: WorldState): Action {
   if (state.toon.activeFight) {
     return { kind: "fight", detail: state.toon.activeFight.monsterId };
+  }
+  // Just fled or otherwise critically hurt: rest and let HP regen before
+  // re-engaging, rather than immediately re-hunting the same zone at the
+  // same low HP and flee-ing again -- the reported fight/flee/retry loop.
+  if (!isRecovered(state)) {
+    return { kind: "rest", detail: "hp" };
   }
   if (state.toon.travel) {
     return { kind: "travel", detail: state.toon.travel.to, travelPurpose: "hunt" };
