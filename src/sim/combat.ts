@@ -1,5 +1,6 @@
 import type { WorldState } from "./state";
 import { MONSTERS, monstersInZone } from "./monsters";
+import { ZONE_IDS, travelTicksBetween } from "./zones";
 
 // Flee threshold: below this fraction of max HP the toon disengages rather
 // than risking death. This is the deliberate safety net until Divine
@@ -18,6 +19,25 @@ function rollDamage(attack: number, defense: number): number {
 export function pickMonster(state: WorldState): string | null {
   const candidates = monstersInZone(state.toon.zone);
   return candidates[0]?.id ?? null;
+}
+
+/**
+ * Picks a hunt target zone: the toon's current zone if it has any
+ * monster, otherwise the nearest zone (by travel ticks) that does. This
+ * is what lets "hunt nearby monsters" actually walk the toon somewhere
+ * new on the map instead of only ever fighting whatever happens to share
+ * its current zone.
+ */
+export function pickHuntZone(state: WorldState): string | null {
+  if (monstersInZone(state.toon.zone).length > 0) return state.toon.zone;
+
+  const candidates = ZONE_IDS.filter((z) => monstersInZone(z).length > 0);
+  if (candidates.length === 0) return null;
+
+  candidates.sort(
+    (a, b) => travelTicksBetween(state.toon.zone, a) - travelTicksBetween(state.toon.zone, b),
+  );
+  return candidates[0];
 }
 
 export function startFight(state: WorldState, monsterId: string): boolean {

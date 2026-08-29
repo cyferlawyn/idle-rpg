@@ -1,6 +1,6 @@
 import type { WorldState } from "../sim/state";
-import { HUNT_TRAVEL_TICKS } from "../sim/decision";
-import { MONSTERS } from "../sim/monsters";
+import { MONSTERS, monstersInZone } from "../sim/monsters";
+import { ZONE_LABELS, TRAINING_ZONE } from "../sim/zones";
 
 /**
  * Canvas-based 2D overworld renderer. Deliberately a pure view: it only
@@ -9,39 +9,56 @@ import { MONSTERS } from "../sim/monsters";
  * renderer swap (better tiles, a real 2D lib) only touches this file.
  */
 
-// Fixed layout for v0's two zones -- enough zones exist in monsters.ts/
-// quests.ts to justify a real node graph once a third zone shows up.
-// Positions are in canvas-space pixels.
-const ZONE_LAYOUT: Record<string, { x: number; y: number; label: string; color: string }> = {
-  meadow: { x: 90, y: 140, label: "Meadow", color: "#3f6e3a" },
-  village: { x: 330, y: 90, label: "Village", color: "#6e5a3a" },
+// Fixed layout for the four v0 zones -- enough to lay out as a small
+// map graph now that each zone has a real role (training ground and/or
+// monster spawns), not just an abstract id. Positions are canvas pixels.
+const ZONE_LAYOUT: Record<string, { x: number; y: number; color: string }> = {
+  meadow: { x: 80, y: 160, color: "#3f6e3a" },
+  village: { x: 220, y: 60, color: "#6e5a3a" },
+  forest: { x: 340, y: 150, color: "#2f5c3f" },
+  cave: { x: 340, y: 260, color: "#4a4a52" },
 };
 
 const CANVAS_W = 420;
-const CANVAS_H = 220;
+const CANVAS_H = 320;
 
 function zonePos(zone: string): { x: number; y: number } {
   return ZONE_LAYOUT[zone] ?? ZONE_LAYOUT.meadow;
 }
 
+/** Skills trained at each zone, for the small "trains here" label. */
+const ZONE_SKILLS: Record<string, string[]> = {};
+for (const [skill, zone] of Object.entries(TRAINING_ZONE)) {
+  (ZONE_SKILLS[zone] ??= []).push(skill);
+}
+
 /**
- * The toon's current draw position: its home zone, or interpolated along
- * the straight line to wherever it's traveling based on real travel
- * progress (ticksRemaining vs HUNT_TRAVEL_TICKS) -- not a canned animation,
- * genuine simulation state driving the pixel position.
+ * The toon's current draw position: its home zone if stationary, or
+ * interpolated along the straight line between travel.from and travel.to
+ * based on real travel progress -- genuine simulation state driving the
+ * pixel position, not a canned animation.
  */
 function toonDrawPos(state: WorldState): { x: number; y: number } {
-  const home = zonePos(state.toon.zone);
   const travel = state.toon.travel;
-  if (!travel) return home;
+  if (!travel) return zonePos(state.toon.zone);
 
-  // v0 has no explicit "which zone am I traveling toward" field (hunt
-  // travel is same-zone monster approach), so render travel as a small
-  // outward bob near the home zone -- honest about what state actually
-  // tracks rather than inventing a destination zone that doesn't exist.
-  const progress = 1 - travel.ticksRemaining / HUNT_TRAVEL_TICKS;
-  const bob = Math.sin(progress * Math.PI) * 18;
-  return { x: home.x + bob, y: home.y - bob * 0.4 };
+  if (travel.from === travel.to) {
+    // Local same-zone approach beat (hunt engaging a monster already in
+    // this zone) -- render as a small outward bob rather than a segment
+    // walk, since there's nowhere else to walk to.
+    const home = zonePos(travel.to);
+    const progress = 1 - travel.ticksRemaining / Math.max(1, travel.totalTicks);
+    const bob = Math.sin(progress * Math.PI) * 14;
+    return { x: home.x + bob, y: home.y - bob * 0.4 };
+  }
+
+  const from = zonePos(travel.from);
+  const to = zonePos(travel.to);
+  const progress = 1 - travel.ticksRemaining / Math.max(1, travel.totalTicks);
+  return {
+    x: from.x + (to.x - from.x) * progress,
+    y: from.y + (to.y - from.y) * progress,
+  };
 }
 
 export function initOverworldCanvas(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
@@ -59,10 +76,12 @@ export function renderOverworld(ctx: CanvasRenderingContext2D, state: WorldState
   ctx.fillStyle = "#14141a";
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Path between zones
+  // Paths between zones (fully connected graph -- no multi-hop
+  // pathfinding in v0, see sim/zones.ts, so every pair is directly
+  // walkable and drawn as a straight path).
   const zones = Object.entries(ZONE_LAYOUT);
-  ctx.strokeStyle = "#3a3a44";
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#2c2c34";
+  ctx.lineWidth = 2;
   for (let i = 0; i < zones.length; i++) {
     for (let j = i + 1; j < zones.length; j++) {
       const [, a] = zones[i];
@@ -74,22 +93,52 @@ export function renderOverworld(ctx: CanvasRenderingContext2D, state: WorldState
     }
   }
 
-  // Zones
+  // Zones, with their monster spawns and training-ground markers laid
+  // out around the hub so the toon visibly has somewhere to walk to.
   for (const [id, z] of zones) {
     const isCurrent = state.toon.zone === id;
+    const label = ZONE_LABELS[id as keyof typeof ZONE_LABELS] ?? id;
+
     ctx.beginPath();
     ctx.fillStyle = z.color;
-    ctx.arc(z.x, z.y, 26, 0, Math.PI * 2);
+    ctx.arc(z.x, z.y, 24, 0, Math.PI * 2);
     ctx.fill();
     if (isCurrent) {
       ctx.strokeStyle = "#e6c34a";
       ctx.lineWidth = 3;
       ctx.stroke();
     }
+
     ctx.fillStyle = "#e6e6ea";
     ctx.font = "11px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(z.label, z.x, z.y + 42);
+    ctx.fillText(label, z.x, z.y + 40);
+
+    // Monster markers: small red dots ringing the zone, one per monster
+    // defined there (monsters.ts), labeled on hover-equivalent (always-on
+    // tiny text since there's no hover in this v0 canvas).
+    const monsters = monstersInZone(id);
+    monsters.forEach((_m, idx) => {
+      const angle = (idx / Math.max(1, monsters.length)) * Math.PI * 2 - Math.PI / 2;
+      const mx = z.x + Math.cos(angle) * 34;
+      const my = z.y + Math.sin(angle) * 34;
+      ctx.beginPath();
+      ctx.fillStyle = "#d84f4f";
+      ctx.arc(mx, my, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Training-ground marker: a small anvil-ish square offset from the
+    // zone if any skill trains here.
+    const skills = ZONE_SKILLS[id];
+    if (skills?.length) {
+      ctx.fillStyle = "#4fa3d8";
+      ctx.fillRect(z.x - 30, z.y - 34, 8, 8);
+      ctx.font = "8px system-ui, sans-serif";
+      ctx.fillStyle = "#8ec7e8";
+      ctx.textAlign = "center";
+      ctx.fillText(skills.join("/"), z.x, z.y - 40);
+    }
   }
 
   // Toon marker

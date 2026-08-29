@@ -1,4 +1,4 @@
-export type SkillName = "combat" | "gathering" | "crafting";
+export type SkillName = "combat" | "gathering" | "crafting" | "alchemy";
 
 /** Ambient mode's current commitment, kept as an abstract intent (not a
  * concrete Action) so e.g. "hunt" can still resolve to travel-then-fight
@@ -12,7 +12,7 @@ export interface Skill {
   xp: number;
 }
 
-export type PoolName = "stamina" | "energy" | "focus";
+export type PoolName = "stamina" | "energy" | "focus" | "vitality";
 
 export interface ResourcePool {
   current: number;
@@ -20,14 +20,20 @@ export interface ResourcePool {
 }
 
 /**
- * Travel is modeled as real state (destination + ticks remaining) rather than
- * an instant teleport-on-arrival, per DESIGN.md's "visual overworld" future
- * scope note -- so a future map view has real movement data to animate
- * instead of the concept being invented retroactively.
+ * Travel is modeled as real state (source + destination zone + ticks
+ * remaining) rather than an instant teleport-on-arrival, per DESIGN.md's
+ * "visual overworld" future scope note -- so the map view has real
+ * movement data to animate (interpolating from -> to) instead of the
+ * concept being invented retroactively. `to` is a zone id (see
+ * sim/zones.ts) -- any activity that needs the toon somewhere specific
+ * (training a skill, hunting a specific monster) routes through this
+ * same generic travel rather than each having its own ad hoc movement.
  */
 export interface Travel {
-  destination: string;
+  from: string;
+  to: string;
   ticksRemaining: number;
+  totalTicks: number;
 }
 
 export interface ActiveQuest {
@@ -125,11 +131,13 @@ export function createInitialState(): WorldState {
         combat: { level: 1, xp: 0 },
         gathering: { level: 1, xp: 0 },
         crafting: { level: 1, xp: 0 },
+        alchemy: { level: 1, xp: 0 },
       },
       pools: {
         stamina: { current: 100, max: 100 },
         energy: { current: 100, max: 100 },
         focus: { current: 100, max: 100 },
+        vitality: { current: 100, max: 100 },
       },
       zone: "meadow",
       travel: null,

@@ -12,6 +12,7 @@ export const SKILL_POOL: Record<SkillName, PoolName> = {
   combat: "stamina",
   gathering: "energy",
   crafting: "focus",
+  alchemy: "vitality",
 };
 
 /**

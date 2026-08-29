@@ -4,6 +4,7 @@ import { progressActiveQuest, startQuest, QUESTS } from "./quests";
 import { SKILL_POOL, drainPool, regenIdlePools, isPoolDepleted } from "./pools";
 import { pickMonster, startFight, resolveFightRound } from "./combat";
 import { MONSTERS } from "./monsters";
+import { travelTicksBetween } from "./zones";
 import { HUNT_TRAVEL_TICKS } from "./decision";
 
 const XP_PER_TRAIN_TICK = 5;
@@ -60,22 +61,37 @@ function applyAction(state: WorldState, action: Action): void {
       }
       break;
     }
-    case "travel":
+    case "travel": {
       // Real position/travel state, not an instant teleport (DESIGN.md
-      // constraint) -- advance ticksRemaining; once it hits 0, pick a
-      // monster in the current zone and start a real fight.
-      if (!state.toon.travel) {
-        state.toon.travel = { destination: "nearest monster", ticksRemaining: HUNT_TRAVEL_TICKS };
-        state.log.push(`${state.toon.name} heads toward ${action.detail}`);
+      // constraint) -- advance ticksRemaining; once it hits 0, land in the
+      // destination zone and either engage combat (hunt) or just arrive
+      // (settle -- training/questing picks it up naturally next tick).
+      const destination = action.detail;
+      if (!state.toon.travel || state.toon.travel.to !== destination) {
+        const sameZone = destination === state.toon.zone;
+        const totalTicks = sameZone ? HUNT_TRAVEL_TICKS : travelTicksBetween(state.toon.zone, destination);
+        state.toon.travel = {
+          from: state.toon.zone,
+          to: destination,
+          ticksRemaining: totalTicks,
+          totalTicks,
+        };
+        state.log.push(`${state.toon.name} heads toward ${destination}`);
       }
       state.toon.travel.ticksRemaining -= 1;
       if (state.toon.travel.ticksRemaining <= 0) {
+        state.toon.zone = destination;
         state.toon.travel = null;
-        const monsterId = pickMonster(state);
-        if (monsterId) startFight(state, monsterId);
-        else state.log.push(`${state.toon.name} finds no monsters here`);
+        if (action.travelPurpose === "hunt") {
+          const monsterId = pickMonster(state);
+          if (monsterId) startFight(state, monsterId);
+          else state.log.push(`${state.toon.name} finds no monsters here`);
+        } else {
+          state.log.push(`${state.toon.name} arrives at ${destination}`);
+        }
       }
       break;
+    }
     case "fight": {
       const monsterId = state.toon.activeFight?.monsterId;
       const result = resolveFightRound(state);

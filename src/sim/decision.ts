@@ -2,6 +2,8 @@ import type { WorldState, Directive, DirectiveType, PoolName } from "./state";
 import { startQuest, QUESTS, currentQuestStep } from "./quests";
 import { isPoolDepleted, SKILL_POOL } from "./pools";
 import { MONSTERS } from "./monsters";
+import { pickHuntZone } from "./combat";
+import { TRAINING_ZONE } from "./zones";
 
 /**
  * An Action is what the decision layer decides to do this tick. Kept as a
@@ -10,9 +12,17 @@ import { MONSTERS } from "./monsters";
 export interface Action {
   kind: "idle" | "train" | "travel" | "fight" | "quest" | "rest";
   detail: string;
+  /**
+   * For "travel" actions only: what to do once the toon arrives (start a
+   * fight, or nothing -- the next tick's decision naturally picks up
+   * training/questing once the zone matches). Keeps tick.ts's travel
+   * handling generic instead of hardcoding hunt-specific behavior.
+   */
+  travelPurpose?: "hunt" | "settle";
 }
 
-/** Ticks of travel before a hunt reaches a monster and combat can start. */
+/** Ticks of local approach-within-a-zone before a hunt engages a monster
+ * already in the current zone (flavor beat, not a cross-zone walk). */
 export const HUNT_TRAVEL_TICKS = 2;
 
 /**
@@ -23,7 +33,7 @@ export const HUNT_TRAVEL_TICKS = 2;
 function actionForDirective(state: WorldState, directive: Directive): Action {
   switch (directive.type) {
     case "train":
-      return { kind: "train", detail: directive.target };
+      return trainAction(state, directive.target);
     case "hunt":
       return huntAction(state);
     case "quest":
@@ -32,6 +42,22 @@ function actionForDirective(state: WorldState, directive: Directive): Action {
       }
       return questAction(state, directive.target);
   }
+}
+
+/**
+ * Resolves what training actually does this tick. Skills each have a real
+ * zone they're trained at (see sim/zones.ts) -- previously training just
+ * ticked XP wherever the toon happened to be standing, with no location at
+ * all. Now the toon must actually walk to that skill's zone first (visible
+ * on the overworld map), same as hunting requires being in a monster's zone.
+ */
+function trainAction(state: WorldState, skill: string): Action {
+  const targetZone = TRAINING_ZONE[skill as keyof typeof TRAINING_ZONE];
+  if (!targetZone) return { kind: "train", detail: skill }; // unknown skill, fall back safely
+  if (state.toon.zone !== targetZone) {
+    return { kind: "travel", detail: targetZone, travelPurpose: "settle" };
+  }
+  return { kind: "train", detail: skill };
 }
 
 /**
@@ -52,17 +78,11 @@ function questAction(state: WorldState, questId: string): Action {
     if (step?.kind === "kill") {
       // Kill steps name a specific monster id as their target (e.g.
       // "village-rat" for Rat Infestation), not a zone -- look up that
-      // monster's zone and move the toon there. The toon's zone never
-      // changes on its own, so without this the toon would keep fighting
-      // whatever's in its current zone forever and never land a kill event
-      // matching the quest's target monster -- the real reason Rat
-      // Infestation stalled with zero progress even after kill-steps were
-      // wired to route through combat.
+      // monster's zone and walk the toon there via real cross-zone travel
+      // rather than an instant zone swap.
       const targetZone = MONSTERS[step.target]?.zone;
       if (targetZone && state.toon.zone !== targetZone) {
-        state.toon.zone = targetZone;
-        state.toon.travel = null; // re-route any in-flight travel to the new zone
-        state.toon.activeFight = null;
+        return { kind: "travel", detail: targetZone, travelPurpose: "settle" };
       }
       return huntAction(state);
     }
@@ -72,17 +92,25 @@ function questAction(state: WorldState, questId: string): Action {
 
 /**
  * Resolves what "hunt" actually does this tick: continue an active fight,
- * continue travel toward the monster, or (once close enough) engage. Real
- * position/travel state per DESIGN.md, not an instant teleport into combat.
+ * continue any in-flight cross-zone travel, walk to the nearest zone with
+ * a monster if the current one has none, or (once in the right zone)
+ * engage locally. Real position/travel state per DESIGN.md, not an
+ * instant teleport into combat.
  */
 function huntAction(state: WorldState): Action {
   if (state.toon.activeFight) {
     return { kind: "fight", detail: state.toon.activeFight.monsterId };
   }
   if (state.toon.travel) {
-    return { kind: "travel", detail: "nearest monster" };
+    return { kind: "travel", detail: state.toon.travel.to, travelPurpose: "hunt" };
   }
-  return { kind: "travel", detail: "nearest monster" };
+  const huntZone = pickHuntZone(state);
+  if (huntZone && huntZone !== state.toon.zone) {
+    return { kind: "travel", detail: huntZone, travelPurpose: "hunt" };
+  }
+  // Already in a zone with a monster -- a short local-approach beat
+  // before engaging (see HUNT_TRAVEL_TICKS), handled by tick.ts.
+  return { kind: "travel", detail: state.toon.zone, travelPurpose: "hunt" };
 }
 
 /**
@@ -113,6 +141,7 @@ function ambientCandidates(state: WorldState): Candidate[] {
     { intent: { kind: "train", skill: "combat" }, pool: "stamina" },
     { intent: { kind: "train", skill: "gathering" }, pool: "energy" },
     { intent: { kind: "train", skill: "crafting" }, pool: "focus" },
+    { intent: { kind: "train", skill: "alchemy" }, pool: "vitality" },
     { intent: { kind: "hunt" }, pool: "stamina" },
   ];
 

@@ -57,6 +57,34 @@ export const QUESTS: Record<string, QuestDefinition> = {
     rewardPrayer: 10,
     weight: "side",
   },
+  "wolf-pelts": {
+    id: "wolf-pelts",
+    title: "Wolf Pelts for the Tanner",
+    description:
+      "The village tanner needs wolf pelts from the forest -- good coin, " +
+      "and a small nudge of gratitude toward the faith.",
+    steps: [
+      { kind: "travel", target: "forest", amount: 2 },
+      { kind: "kill", target: "forest-wolf", amount: 4 },
+    ],
+    rewardXp: { combat: 22, gathering: 8 },
+    rewardPrayer: 12,
+    weight: "side",
+  },
+  "cave-clearing": {
+    id: "cave-clearing",
+    title: "Clear the Cave",
+    description:
+      "Something's been driving miners out of the eastern cave. Time to " +
+      "find out what, and put a stop to it.",
+    steps: [
+      { kind: "travel", target: "cave", amount: 2 },
+      { kind: "kill", target: "cave-spider", amount: 3 },
+    ],
+    rewardXp: { combat: 35 },
+    rewardPrayer: 18,
+    weight: "side",
+  },
 };
 
 export function currentQuestStep(quest: QuestDefinition, stepIndex: number): QuestStep | undefined {
