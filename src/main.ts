@@ -1,6 +1,7 @@
 import "./style.css";
 import { createInitialState } from "./sim/state";
 import { runTicks } from "./sim/tick";
+import { issueDirective } from "./sim/decision";
 
 const TICK_INTERVAL_MS = 1000;
 
@@ -9,6 +10,10 @@ const state = createInitialState();
 // Bootstrap: start the toon training combat by default so there's visible
 // progress with zero player input -- proves the "plays itself" premise.
 state.directives.push({ type: "train", target: "combat", issuedAt: 0 });
+// Seed a little starting prayer so the quest directive button is usable
+// immediately without waiting on the ambient loop -- v0 demo convenience,
+// not a balance decision (see DESIGN.md open questions on prayer tuning).
+state.prayer = 10;
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
@@ -16,7 +21,11 @@ app.innerHTML = `
     <h1>idle-rpg <span class="tag">devlog build</span></h1>
     <section class="stats">
       <div><strong id="toon-name"></strong> — HP <span id="toon-hp"></span></div>
+      <div>Prayer: <span id="prayer"></span></div>
       <ul id="skills"></ul>
+    </section>
+    <section class="stats">
+      <button id="quest-btn">Nudge: do "Cat in the Tree" quest (costs prayer)</button>
     </section>
     <section class="log">
       <h2>Log</h2>
@@ -25,9 +34,15 @@ app.innerHTML = `
   </div>
 `;
 
+document.querySelector("#quest-btn")!.addEventListener("click", () => {
+  issueDirective(state, "quest", "cat-in-tree");
+  render();
+});
+
 function render(): void {
   document.querySelector("#toon-name")!.textContent = state.toon.name;
   document.querySelector("#toon-hp")!.textContent = `${state.toon.hp}/${state.toon.maxHp}`;
+  document.querySelector("#prayer")!.textContent = String(state.prayer);
 
   const skillsEl = document.querySelector("#skills")!;
   skillsEl.innerHTML = Object.entries(state.toon.skills)

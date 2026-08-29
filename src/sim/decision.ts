@@ -1,27 +1,31 @@
 import type { WorldState, Directive, DirectiveType } from "./state";
+import { startQuest } from "./quests";
 
 /**
  * An Action is what the decision layer decides to do this tick. Kept as a
  * plain data object (not a function) so it's trivially loggable/testable.
  */
 export interface Action {
-  kind: "idle" | "train" | "travel" | "fight" | "turn_in_quest";
+  kind: "idle" | "train" | "travel" | "fight" | "quest";
   detail: string;
 }
 
 /**
  * Tier B: directive queue. Pops the front directive if present and returns
- * an action working toward it. Falls back to null if no directive is active
- * or resolvable (caller should fall back to ambient/Tier A behavior).
+ * an action working toward it. Quest directives start (or resume) the active
+ * quest via quests.ts; the actual step-by-step progress happens in tick.ts.
  */
-function actionForDirective(directive: Directive): Action {
+function actionForDirective(state: WorldState, directive: Directive): Action {
   switch (directive.type) {
     case "train":
       return { kind: "train", detail: directive.target };
     case "hunt":
       return { kind: "travel", detail: directive.target };
     case "quest":
-      return { kind: "turn_in_quest", detail: directive.target };
+      if (state.toon.activeQuest?.questId !== directive.target) {
+        startQuest(state, directive.target);
+      }
+      return { kind: "quest", detail: directive.target };
   }
 }
 
@@ -55,11 +59,41 @@ function ambientAction(weights: Record<DirectiveType, number>): Action {
 
 /**
  * Core decision function: directive queue takes priority; ambient weighting
- * is the fallback. Kept pure (no mutation, no I/O) so it's cheaply unit
- * testable in isolation from the tick loop / UI.
+ * is the fallback. Kept pure aside from starting a quest on the WorldState
+ * it's passed (no separate I/O), so it's still cheaply unit testable.
  */
 export function getNextAction(state: WorldState): Action {
   const active = state.directives[0];
-  if (active) return actionForDirective(active);
+  if (active) return actionForDirective(state, active);
   return ambientAction(state.weights);
+}
+
+/**
+ * Per-tier prayer costs for issuing a directive (Tier B). Deliberately cheap
+ * for v0 -- per DESIGN.md, actual costs/accrual are a tuning pass, not a
+ * spec decision, and the loop should be visible/affordable early on.
+ */
+export const DIRECTIVE_COST: Record<DirectiveType, number> = {
+  train: 1,
+  hunt: 2,
+  quest: 3,
+};
+
+/**
+ * Attempts to queue a directive, spending prayer if affordable. Returns
+ * false (no-op) if the player can't afford it -- callers (UI) should surface
+ * that rather than silently queuing an unaffordable directive.
+ */
+export function issueDirective(
+  state: WorldState,
+  type: DirectiveType,
+  target: string,
+): boolean {
+  const cost = DIRECTIVE_COST[type];
+  if (state.prayer < cost) return false;
+
+  state.prayer -= cost;
+  state.directives.push({ type, target, issuedAt: state.tick });
+  state.log.push(`Directive issued: ${type} ${target} (-${cost} prayer)`);
+  return true;
 }

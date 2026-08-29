@@ -1,5 +1,6 @@
 import type { WorldState } from "./state";
 import { getNextAction, type Action } from "./decision";
+import { progressActiveQuest } from "./quests";
 
 const XP_PER_TRAIN_TICK = 5;
 const XP_TO_LEVEL = (level: number) => level * 100;
@@ -25,11 +26,17 @@ function applyAction(state: WorldState, action: Action): void {
     case "fight":
       state.log.push(`${state.toon.name} fights at ${action.detail}`);
       break;
-    case "turn_in_quest":
-      state.log.push(`${state.toon.name} works on quest ${action.detail}`);
-      // Directive completion is a stub for now -- real quest resolution
-      // (travel -> fight -> deliver) lands in quests.ts in a later milestone.
-      state.directives.shift();
+    case "quest":
+      // The active quest was started (or already running) by the decision
+      // layer; actually advancing it by one tick's worth of progress is the
+      // tick loop's job, since directives can persist across many ticks.
+      progressActiveQuest(state);
+      // Once the quest completes, quests.ts clears activeQuest and pops it
+      // off completedQuests -- pop the now-finished directive so the toon
+      // falls back to ambient behavior instead of looping on a dead target.
+      if (!state.toon.activeQuest && state.directives[0]?.type === "quest") {
+        state.directives.shift();
+      }
       break;
     case "idle":
       break;
