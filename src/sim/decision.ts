@@ -142,16 +142,16 @@ interface Candidate {
   pool: PoolName | null;
 }
 
-function ambientCandidates(state: WorldState): Candidate[] {
+export function ambientCandidates(state: WorldState): Candidate[] {
   const candidates: Candidate[] = [
     { intent: { kind: "train", skill: "combat" }, pool: "stamina" },
-    { intent: { kind: "train", skill: "woodcutting" }, pool: "stamina" },
-    { intent: { kind: "train", skill: "mining" }, pool: "stamina" },
-    { intent: { kind: "train", skill: "fishing" }, pool: "energy" },
-    { intent: { kind: "train", skill: "cooking" }, pool: "focus" },
-    { intent: { kind: "train", skill: "smithing" }, pool: "focus" },
-    { intent: { kind: "train", skill: "alchemy" }, pool: "vitality" },
-    { intent: { kind: "train", skill: "thieving" }, pool: "nerve" },
+    { intent: { kind: "train", skill: "woodcutting" }, pool: "fatigue" },
+    { intent: { kind: "train", skill: "mining" }, pool: "fatigue" },
+    { intent: { kind: "train", skill: "fishing" }, pool: "fatigue" },
+    { intent: { kind: "train", skill: "cooking" }, pool: "concentration" },
+    { intent: { kind: "train", skill: "smithing" }, pool: "concentration" },
+    { intent: { kind: "train", skill: "alchemy" }, pool: "concentration" },
+    { intent: { kind: "train", skill: "thieving" }, pool: "fatigue" },
     { intent: { kind: "hunt" }, pool: "stamina" },
   ];
 
@@ -180,12 +180,12 @@ function poolScore(state: WorldState, pool: PoolName | null): number {
  * the exact Action would trap the toon on "traveling" forever even after
  * it arrives and a fight starts.
  */
-type AmbientIntent =
+export type AmbientIntent =
   | { kind: "train"; skill: string }
   | { kind: "hunt" }
   | { kind: "quest"; questId: string };
 
-function resolveIntent(state: WorldState, intent: AmbientIntent): Action {
+export function resolveIntent(state: WorldState, intent: AmbientIntent): Action {
   switch (intent.kind) {
     case "train":
       return { kind: "train", detail: intent.skill };

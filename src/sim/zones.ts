@@ -73,3 +73,21 @@ export function travelTicksBetween(from: ZoneId | string, to: ZoneId | string): 
   const key = [from, to].sort().join("|");
   return ZONE_DISTANCE[key] ?? 3;
 }
+
+/** Speed bonus granted per Agility level above 1, as a fraction of base
+ * travel time removed. See docs/movement_agility_spec.md §3.1. */
+export const AGILITY_SPEED_BONUS_PER_LEVEL = 0.03;
+
+/** Hard ceiling on how much travel time Agility can ever discount --
+ * see docs/movement_agility_spec.md §3.1. */
+export const AGILITY_MAX_SPEED_BONUS = 0.7;
+
+/** Maps Agility level to a multiplier applied to base travel ticks.
+ * 1.0 at level 1, floors at 0.3 (70% discount cap, reached ~L24). */
+export function movementSpeedMultiplier(agilityLevel: number): number {
+  const bonus = Math.min(
+    AGILITY_MAX_SPEED_BONUS,
+    AGILITY_SPEED_BONUS_PER_LEVEL * (agilityLevel - 1),
+  );
+  return 1 - bonus;
+}

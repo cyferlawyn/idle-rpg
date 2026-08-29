@@ -1,14 +1,15 @@
 import type { WorldState, PoolName } from "./state";
-import { getNextAction, type Action } from "./decision";
+import { getNextAction, ambientCandidates, type Action } from "./decision";
 import { progressActiveQuest, startQuest, QUESTS } from "./quests";
 import { SKILL_POOL, drainPool, regenIdlePools, isPoolDepleted } from "./pools";
 import { pickMonster, startFight, resolveFightRound, regenHp } from "./combat";
 import { MONSTERS } from "./monsters";
-import { travelTicksBetween } from "./zones";
+import { travelTicksBetween, movementSpeedMultiplier } from "./zones";
 import { HUNT_TRAVEL_TICKS } from "./decision";
 import { XP_TO_LEVEL } from "./xp";
 
 const XP_PER_TRAIN_TICK = 5;
+const AGILITY_XP_PER_TRAVEL_TICK = 3;
 
 /** Which pool (if any) an action draws down while it's being performed. */
 function poolForAction(action: Action): PoolName | null {
@@ -69,7 +70,11 @@ function applyAction(state: WorldState, action: Action): void {
       const destination = action.detail;
       if (!state.toon.travel || state.toon.travel.to !== destination) {
         const sameZone = destination === state.toon.zone;
-        const totalTicks = sameZone ? HUNT_TRAVEL_TICKS : travelTicksBetween(state.toon.zone, destination);
+        const baseTicks = sameZone ? HUNT_TRAVEL_TICKS : travelTicksBetween(state.toon.zone, destination);
+        const totalTicks = Math.max(
+          1,
+          Math.round(baseTicks * movementSpeedMultiplier(state.toon.skills.agility.level)),
+        );
         state.toon.travel = {
           from: state.toon.zone,
           to: destination,
@@ -79,6 +84,21 @@ function applyAction(state: WorldState, action: Action): void {
         state.log.push(`${state.toon.name} heads toward ${destination}`);
       }
       state.toon.travel.ticksRemaining -= 1;
+
+      // Passive Agility training: every tick spent actually traveling
+      // feeds distanceMoved and Agility XP, per
+      // docs/movement_agility_spec.md §4. No pool gating -- the toon
+      // can always at least walk.
+      state.toon.distanceMoved += 1;
+      const agility = state.toon.skills.agility;
+      agility.xp += AGILITY_XP_PER_TRAVEL_TICK;
+      const agilityNeeded = XP_TO_LEVEL(agility.level);
+      if (agility.xp >= agilityNeeded) {
+        agility.xp -= agilityNeeded;
+        agility.level += 1;
+        state.log.push(`${state.toon.name} feels lighter on their feet (Agility level ${agility.level})`);
+      }
+
       if (state.toon.travel.ticksRemaining <= 0) {
         state.toon.zone = destination;
         state.toon.travel = null;
@@ -97,6 +117,29 @@ function applyAction(state: WorldState, action: Action): void {
       const result = resolveFightRound(state);
       if (result === "kill" && monsterId) {
         progressActiveQuest(state, { monsterId });
+      }
+      if (result === "collapse") {
+        // Hard stop at 0 HP: forced reassignment to a random non-combat
+        // activity (see docs/exhaustion_pools_spec.md §4). Quest directives
+        // that route through combat (kill steps) survive depletion per the
+        // existing quest-directive precedent; generic hunt/train directives
+        // are consumed the same way a depleted fatigue/concentration pool
+        // already consumes them.
+        const isQuestDirective = state.directives[0]?.type === "quest";
+        if (!isQuestDirective && state.directives[0]) {
+          state.directives.shift();
+        }
+        const candidates = ambientCandidates(state).filter(
+          (c) =>
+            c.intent.kind !== "hunt" &&
+            !(c.intent.kind === "train" && c.intent.skill === "combat"),
+        );
+        if (candidates.length > 0) {
+          const pick = candidates[Math.floor(Math.random() * candidates.length)];
+          state.ambientCommitment = pick.intent;
+        } else {
+          state.ambientCommitment = null;
+        }
       }
       break;
     }

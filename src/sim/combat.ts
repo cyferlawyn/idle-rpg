@@ -1,4 +1,30 @@
-import type { WorldState } from "./state";
+import type { WorldState, FightEvent, CombatStyle } from "./state";
+import { MAX_FIGHT_EVENTS } from "./state";
+
+/** Cycle order for the manual style-swap control (task t_8a9b15a3) -- no
+ * particular ranking, just a stable rotation so repeated clicks visit all
+ * three styles from any starting point. */
+const STYLE_CYCLE: CombatStyle[] = ["sword_and_board", "dual_wield", "two_handed"];
+
+/** Swaps the toon to the next combat style in STYLE_CYCLE. Purely a state
+ * mutation -- no gameplay effect yet (see state.ts CombatStyle doc comment
+ * on why: weapon/precision integration is future scope per
+ * unified_combat_spec.md §7). Safe to call mid-fight; the indicator just
+ * reflects whatever the state says on the next render. */
+export function cycleCombatStyle(state: WorldState): void {
+  const idx = STYLE_CYCLE.indexOf(state.toon.combatStyle);
+  state.toon.combatStyle = STYLE_CYCLE[(idx + 1) % STYLE_CYCLE.length];
+  state.log.push(`${state.toon.name} switches to ${STYLE_LABELS[state.toon.combatStyle]} stance`);
+}
+
+/** Human-readable labels for the UI -- kept here alongside the style enum's
+ * owning module logic rather than in render/ so both the HUD badge and any
+ * future combat-log text stay in sync with one source of truth. */
+export const STYLE_LABELS: Record<CombatStyle, string> = {
+  sword_and_board: "Sword & Board",
+  dual_wield: "Dual Wield",
+  two_handed: "Two-Handed",
+};
 import { MONSTERS, monstersInZone } from "./monsters";
 import { ZONE_IDS, travelTicksBetween } from "./zones";
 
@@ -15,6 +41,11 @@ const FLEE_HP_FRACTION = 0.25;
 const RECOVERED_HP_FRACTION = 0.6;
 const VARIANCE = 0.25; // +/- 25% swing per hit, per your steer ("small randomness")
 const HP_REGEN_PER_TICK = 1;
+// Exchange variety for the fight screen (task t_d4d53058): each swing
+// either misses outright, gets partially blocked, or connects clean.
+const MISS_CHANCE = 0.15;
+const BLOCK_CHANCE = 0.2;
+const BLOCK_REDUCTION = 0.5; // blocked hits deal half damage
 
 /** Whether the toon is at/above the recovery threshold and safe to hunt. */
 export function isRecovered(state: WorldState): boolean {
@@ -67,9 +98,19 @@ export function pickHuntZone(state: WorldState): string | null {
 export function startFight(state: WorldState, monsterId: string): boolean {
   const def = MONSTERS[monsterId];
   if (!def) return false;
-  state.toon.activeFight = { monsterId, monsterHp: def.hp };
+  state.toon.activeFight = { monsterId, monsterHp: def.hp, events: [], turn: 0 };
   state.log.push(`${state.toon.name} engages a ${def.name}`);
   return true;
+}
+
+/** Appends an exchange event to the fight's bounded ring buffer, dropping
+ * the oldest entries past MAX_FIGHT_EVENTS so a long exchange never grows
+ * the array (and thus render cost) unboundedly. */
+function pushEvent(events: FightEvent[], event: FightEvent): void {
+  events.push(event);
+  if (events.length > MAX_FIGHT_EVENTS) {
+    events.splice(0, events.length - MAX_FIGHT_EVENTS);
+  }
 }
 
 /**
@@ -99,16 +140,36 @@ export function resolveFightRound(state: WorldState): FightRoundResult {
     return "ongoing";
   }
 
+  fight.turn += 1;
   const combatLevel = state.toon.skills.combat.level;
   const toonAttack = 5 + combatLevel * 2;
   const toonDefense = 2 + combatLevel;
 
-  const dmgToMonster = rollDamage(toonAttack, def.defense);
-  fight.monsterHp = Math.max(0, fight.monsterHp - dmgToMonster);
-  state.log.push(`${state.toon.name} hits ${def.name} for ${dmgToMonster}`);
+  // Toon's swing: MISS_CHANCE to whiff entirely, else BLOCK_CHANCE for the
+  // monster to shave the hit down instead of eating it clean -- gives the
+  // fight screen real hit/miss/block variety to render (task t_d4d53058)
+  // instead of every exchange being an unconditional connect.
+  const toonRoll = Math.random();
+  if (toonRoll < MISS_CHANCE) {
+    state.log.push(`${state.toon.name} swings at ${def.name} and misses`);
+    pushEvent(fight.events, { turn: fight.turn, actor: "toon", kind: "miss" });
+  } else {
+    const blocked = toonRoll < MISS_CHANCE + BLOCK_CHANCE;
+    const rawDmg = rollDamage(toonAttack, def.defense);
+    const dmgToMonster = blocked ? Math.max(0, Math.round(rawDmg * (1 - BLOCK_REDUCTION))) : rawDmg;
+    fight.monsterHp = Math.max(0, fight.monsterHp - dmgToMonster);
+    if (blocked) {
+      state.log.push(`${def.name} blocks ${state.toon.name}'s attack, taking ${dmgToMonster}`);
+      pushEvent(fight.events, { turn: fight.turn, actor: "toon", kind: "block", amount: dmgToMonster });
+    } else {
+      state.log.push(`${state.toon.name} hits ${def.name} for ${dmgToMonster}`);
+      pushEvent(fight.events, { turn: fight.turn, actor: "toon", kind: "hit", amount: dmgToMonster });
+    }
+  }
 
   if (fight.monsterHp <= 0) {
     state.log.push(`${state.toon.name} defeats ${def.name}!`);
+    pushEvent(fight.events, { turn: fight.turn, actor: "toon", kind: "kill" });
     for (const [skillName, xp] of Object.entries(def.xpReward) as [
       keyof typeof state.toon.skills,
       number,
@@ -121,15 +182,41 @@ export function resolveFightRound(state: WorldState): FightRoundResult {
     return "kill";
   }
 
-  const dmgToToon = rollDamage(def.attack, toonDefense);
-  // Floor at 1, not 0 -- no permadeath in v0 (see DESIGN.md: resurrection/
-  // Divine Intervention doesn't exist yet, so the toon must always survive
-  // to flee rather than land on exactly 0 HP from an unlucky big hit).
-  state.toon.hp = Math.max(1, state.toon.hp - dmgToToon);
-  state.log.push(`${def.name} hits ${state.toon.name} for ${dmgToToon}`);
+  // Monster's swing: same miss/block/hit roll, mirrored for the other side.
+  const monsterRoll = Math.random();
+  let dmgToToon = 0;
+  if (monsterRoll < MISS_CHANCE) {
+    state.log.push(`${def.name} attacks ${state.toon.name} and misses`);
+    pushEvent(fight.events, { turn: fight.turn, actor: "monster", kind: "miss" });
+  } else {
+    const blocked = monsterRoll < MISS_CHANCE + BLOCK_CHANCE;
+    const rawDmg = rollDamage(def.attack, toonDefense);
+    dmgToToon = blocked ? Math.max(0, Math.round(rawDmg * (1 - BLOCK_REDUCTION))) : rawDmg;
+    if (blocked) {
+      state.log.push(`${state.toon.name} blocks ${def.name}'s attack, taking ${dmgToToon}`);
+      pushEvent(fight.events, { turn: fight.turn, actor: "monster", kind: "block", amount: dmgToToon });
+    } else {
+      state.log.push(`${def.name} hits ${state.toon.name} for ${dmgToToon}`);
+      pushEvent(fight.events, { turn: fight.turn, actor: "monster", kind: "hit", amount: dmgToToon });
+    }
+  }
+
+  // Floor at 0 now -- HP hitting exactly 0 is the new "collapse" hard stop
+  // (see docs/exhaustion_pools_spec.md §4). No permadeath still holds: 0 HP
+  // isn't death, just an involuntary end to the fight with forced
+  // reassignment, distinct from the voluntary flee-at-25% safety valve.
+  state.toon.hp = Math.max(0, state.toon.hp - dmgToToon);
+
+  if (state.toon.hp <= 0) {
+    state.log.push(`${state.toon.name} collapses from exhaustion!`);
+    pushEvent(fight.events, { turn: fight.turn, actor: "monster", kind: "collapse" });
+    state.toon.activeFight = null;
+    return "collapse";
+  }
 
   if (state.toon.hp / state.toon.maxHp <= FLEE_HP_FRACTION) {
     state.log.push(`${state.toon.name} is badly hurt and flees the fight!`);
+    pushEvent(fight.events, { turn: fight.turn, actor: "toon", kind: "flee" });
     state.toon.activeFight = null;
     return "flee";
   }

@@ -277,7 +277,7 @@ li {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 0.75rem 1rem;
   overflow: hidden;
   pointer-events: auto;
@@ -293,6 +293,7 @@ li {
   align-items: center;
   gap: 1.25rem;
   width: 100%;
+  flex: 0 0 auto;
 }
 
 .fight-combatant {
@@ -334,6 +335,75 @@ li {
 .fight-vs {
   font-weight: 700;
   color: #888;
+}
+
+/* Exchange feed: bounded, independently scrollable so a long fight never
+   grows or breaks the fixed fight-screen panel (task t_d4d53058). Newest
+   event is scrolled into view on every render (see renderFightScreen). */
+.fight-feed {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0.4rem 0.25rem 0;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.fight-event {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.1rem 0.15rem;
+  border-radius: 4px;
+}
+
+.fight-event-icon {
+  flex: 0 0 auto;
+  width: 1.1em;
+  text-align: center;
+}
+
+.fight-event-amount {
+  font-weight: 700;
+}
+
+/* Distinct color per event type so hit/miss/block/terminal beats read at
+   a glance without parsing the text. */
+.fight-event-hit .fight-event-amount {
+  color: #e8935a;
+}
+
+.fight-event-miss {
+  color: #7d8590;
+  font-style: italic;
+}
+
+.fight-event-block .fight-event-amount {
+  color: #6fb3e0;
+}
+
+.fight-event-kill,
+.fight-event-collapse {
+  color: #d84f4f;
+  font-weight: 600;
+}
+
+.fight-event-flee {
+  color: #e0c25a;
+  font-weight: 600;
+}
+
+/* Actor tint: whose action this was, independent of outcome color above. */
+.fight-event-toon .fight-event-icon {
+  filter: hue-rotate(0deg);
+}
+
+.fight-event-monster .fight-event-icon {
+  opacity: 0.85;
 }
 
 @media (max-width: 640px) {

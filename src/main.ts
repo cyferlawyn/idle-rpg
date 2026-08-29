@@ -5,6 +5,7 @@ import { issueDirective } from "./sim/decision";
 import { initOverworldCanvas, renderOverworld, renderFightScreen } from "./render/overworld";
 import { initNodeTooltip } from "./render/tooltip";
 import { XP_TO_LEVEL } from "./sim/xp";
+import { cycleCombatStyle, STYLE_LABELS } from "./sim/combat";
 
 const TICK_INTERVAL_MS = 1000;
 
@@ -45,6 +46,7 @@ app.innerHTML = `
       <h2>Combat</h2>
       <div class="hud-body">
         <div class="combat-name"><strong id="toon-name"></strong> <span id="combat-badge" class="combat-badge"></span></div>
+        <button id="style-badge" class="style-badge" title="Click to change combat style (dev toggle)"></button>
         <div class="hud-bar-row">
           <span class="hud-bar-label">HP</span>
           <div class="hud-bar"><div id="hp-bar-fill" class="hud-bar-fill hp"></div></div>
@@ -92,6 +94,15 @@ document.querySelector("#quest-btn")!.addEventListener("click", () => {
 
 document.querySelector("#hunt-btn")!.addEventListener("click", () => {
   issueDirective(state, "hunt", "nearest monster");
+  render();
+});
+
+// Manual style-swap control -- no combat-mechanic effect yet (see
+// sim/combat.ts cycleCombatStyle doc comment); this is the reactive UI
+// hook for whatever picks the style later (equipment, a player choice
+// menu, etc.) without having to touch main.ts again.
+document.querySelector("#style-badge")!.addEventListener("click", () => {
+  cycleCombatStyle(state);
   render();
 });
 
@@ -145,6 +156,13 @@ function render(): void {
     badge.textContent = "";
     badge.classList.remove("active");
   }
+
+  // Combat style indicator: reads straight from state.toon.combatStyle
+  // every render, so any future writer (equipment swap, a style-select
+  // menu) just needs to mutate that field and this updates for free.
+  const styleBadge = document.querySelector<HTMLButtonElement>("#style-badge")!;
+  styleBadge.textContent = STYLE_LABELS[state.toon.combatStyle];
+  styleBadge.dataset.style = state.toon.combatStyle;
 
   const skillsEl = document.querySelector("#skills")!;
   skillsEl.innerHTML = Object.entries(state.toon.skills)

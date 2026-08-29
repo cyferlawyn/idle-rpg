@@ -6,7 +6,9 @@ export type SkillName =
   | "cooking"
   | "smithing"
   | "alchemy"
-  | "thieving";
+  | "thieving"
+  | "agility";
+  | "agility";
 
 /** Ambient mode's current commitment, kept as an abstract intent (not a
  * concrete Action) so e.g. "hunt" can still resolve to travel-then-fight
@@ -20,7 +22,13 @@ export interface Skill {
   xp: number;
 }
 
-export type PoolName = "stamina" | "energy" | "focus" | "vitality" | "nerve";
+export type PoolName = "stamina" | "energy" | "focus" | "vitality" | "nerve" | "fatigue" | "concentration";
+
+/** The three combat styles per docs/combat-styles-spec.md (t_c2d3a4fb) --
+ * each trades offense/defense differently (sword_and_board: parry+block,
+ * dual_wield: highest dodge, two_handed: neither, raw damage instead).
+ * Kept here (not combat.ts) so it's part of the serializable ToonState. */
+export type CombatStyle = "sword_and_board" | "dual_wield" | "two_handed";
 
 /** The three exhaustion pool categories per docs/exhaustion_pools_spec.md.
  * "hp" routes to toon.hp/maxHp directly (no pools[] entry); "fatigue" and
@@ -61,9 +69,30 @@ export interface ActiveQuest {
  * so a future fight screen has real hit/miss/kill beats to animate rather
  * than only a before/after HP delta.
  */
+/**
+ * One exchanged action within a fight (a hit, miss, block, or the fight's
+ * terminal beat) -- kept as a bounded ring buffer on the fight itself so
+ * the fight screen has real per-round data to render distinctly instead
+ * of scraping the generic text log (see task t_d4d53058).
+ */
+export interface FightEvent {
+  turn: number;
+  actor: "toon" | "monster";
+  kind: "hit" | "miss" | "block" | "kill" | "flee" | "collapse";
+  amount?: number;
+}
+
+/** Cap on events kept per fight -- bounds memory/render cost across a
+ * very long exchange without ever needing to trim mid-fight logic. */
+export const MAX_FIGHT_EVENTS = 30;
+
 export interface ActiveFight {
   monsterId: string;
   monsterHp: number;
+  /** Ring buffer of exchanged actions this fight, most recent last. */
+  events: FightEvent[];
+  /** Round counter, used only to tag events for stable React-free keys. */
+  turn: number;
 }
 export interface ToonState {
   name: string;
@@ -89,6 +118,24 @@ export interface ToonState {
   /** Lifetime kills per monster id -- lets kill-type quest steps gate on
    * real combat outcomes instead of a blind tick counter. */
   kills: Record<string, number>;
+  /** Lifetime ticks spent actually traveling (Travel state active), summed
+   * across every trip ever taken. Feeds passive Agility XP (see
+   * docs/movement_agility_spec.md §4) and is available for future
+   * UI/achievements. Not itself read by the speed formula -- Agility
+   * *level* is (see movementSpeedMultiplier in zones.ts). */
+  distanceMoved: number;
+  /** The toon's currently equipped combat style -- drives the combat
+   * container's style indicator (see sim/combat.ts cycleCombatStyle). No
+   * gameplay effect yet (weapon/precision integration is future scope per
+   * unified_combat_spec.md §7); this is the state slice the UI reacts to. */
+  combatStyle: CombatStyle;
+  /** Lifetime ticks spent actually traveling (Travel state active),
+   * summed across every trip ever taken. Feeds passive Agility XP (see
+   * docs/movement_agility_spec.md §4) and is available for future
+   * UI/achievements. Not itself read by the speed formula -- Agility
+   * *level* is (see §3) -- this is the passive-training input, not a
+   * second speed multiplier. */
+  distanceMoved: number;
 }
 
 export type DirectiveType = "quest" | "hunt" | "train";
@@ -148,6 +195,7 @@ export function createInitialState(): WorldState {
         smithing: { level: 1, xp: 0 },
         alchemy: { level: 1, xp: 0 },
         thieving: { level: 1, xp: 0 },
+        agility: { level: 1, xp: 0 },
       },
       pools: {
         stamina: { current: 100, max: 100 },
@@ -155,6 +203,15 @@ export function createInitialState(): WorldState {
         focus: { current: 100, max: 100 },
         vitality: { current: 100, max: 100 },
         nerve: { current: 100, max: 100 },
+        // Gathering's shared exhaustion pool (woodcutting/mining/fishing/
+        // thieving) per docs/exhaustion_pools_spec.md -- tuned so a
+        // sustained gathering session lasts ~3-5 min at the tick rate
+        // below (see FATIGUE_DRAIN_PER_TICK in pools.ts).
+        fatigue: { current: 100, max: 100 },
+        // Crafting's shared exhaustion pool (cooking/smithing/alchemy) per
+        // docs/exhaustion_pools_spec.md -- same 3-5 min tuning target as
+        // fatigue (see CONCENTRATION_DRAIN_PER_TICK in pools.ts).
+        concentration: { current: 100, max: 100 },
       },
       zone: "meadow",
       travel: null,
@@ -164,6 +221,9 @@ export function createInitialState(): WorldState {
       completedQuests: [],
       activeFight: null,
       kills: {},
+      distanceMoved: 0,
+      combatStyle: "sword_and_board",
+      distanceMoved: 0,
     },
     directives: [],
     ambientCommitment: null,

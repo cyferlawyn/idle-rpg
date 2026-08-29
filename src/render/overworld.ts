@@ -1,6 +1,7 @@
 import type { WorldState } from "../sim/state";
 import { MONSTERS, monstersInZone } from "../sim/monsters";
 import { ZONE_LABELS, TRAINING_ZONE } from "../sim/zones";
+import { STYLE_LABELS } from "../sim/combat";
 
 /**
  * Canvas-based 2D overworld renderer. Deliberately a pure view: it only
@@ -572,6 +573,41 @@ export function renderFightScreen(el: HTMLElement, state: WorldState): void {
   const monsterMaxHp = monster?.hp ?? fight.monsterHp;
   const toonPct = Math.max(0, Math.round((state.toon.hp / state.toon.maxHp) * 100));
   const monsterPct = Math.max(0, Math.round((fight.monsterHp / monsterMaxHp) * 100));
+  const monsterName = monster?.name ?? fight.monsterId;
+
+  const EVENT_ICON: Record<string, string> = {
+    hit: "⚔",
+    miss: "💨",
+    block: "🛡",
+    kill: "☠",
+    flee: "🏃",
+    collapse: "💥",
+  };
+  const EVENT_LABEL: Record<string, string> = {
+    hit: "hits",
+    miss: "misses",
+    block: "blocks",
+    kill: "defeats",
+    flee: "flees",
+    collapse: "collapses",
+  };
+
+  // Render newest-last with the feed scrolled to bottom -- events append
+  // in real time as new rounds resolve. Bounded to the fight's own ring
+  // buffer (state layer already caps it at MAX_FIGHT_EVENTS), and the CSS
+  // gives the feed its own scroll region so a long exchange never grows
+  // or breaks the panel's fixed layout.
+  const feedHtml = fight.events
+    .map((ev) => {
+      const actorName = ev.actor === "toon" ? state.toon.name : monsterName;
+      const amountHtml = ev.amount !== undefined ? ` <span class="fight-event-amount">${ev.amount}</span>` : "";
+      return `
+        <li class="fight-event fight-event-${ev.kind} fight-event-${ev.actor}">
+          <span class="fight-event-icon">${EVENT_ICON[ev.kind] ?? "•"}</span>
+          <span class="fight-event-text">${actorName} ${EVENT_LABEL[ev.kind] ?? ev.kind}${amountHtml}</span>
+        </li>`;
+    })
+    .join("");
 
   el.innerHTML = `
     <div class="fight-row">
@@ -582,10 +618,13 @@ export function renderFightScreen(el: HTMLElement, state: WorldState): void {
       </div>
       <div class="fight-vs">VS</div>
       <div class="fight-combatant">
-        <div class="fight-name">${monster?.name ?? fight.monsterId}</div>
+        <div class="fight-name">${monsterName}</div>
         <div class="hp-bar"><div class="hp-fill monster" style="width:${monsterPct}%"></div></div>
         <div class="hp-text">${fight.monsterHp}/${monsterMaxHp}</div>
       </div>
     </div>
+    <ul class="fight-feed" id="fight-feed">${feedHtml}</ul>
   `;
+  const feedEl = el.querySelector<HTMLUListElement>("#fight-feed");
+  if (feedEl) feedEl.scrollTop = feedEl.scrollHeight;
 }

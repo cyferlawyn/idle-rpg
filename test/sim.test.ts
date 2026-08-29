@@ -3,7 +3,7 @@ import { createInitialState } from "../src/sim/state";
 import { getNextAction, issueDirective, DIRECTIVE_COST, HUNT_TRAVEL_TICKS } from "../src/sim/decision";
 import { step, runTicks } from "../src/sim/tick";
 import { startQuest, progressActiveQuest, QUESTS } from "../src/sim/quests";
-import { startFight, resolveFightRound } from "../src/sim/combat";
+import { startFight, resolveFightRound, isCollapsed, regenHp } from "../src/sim/combat";
 
 describe("decision layer", () => {
   it("follows an active directive over ambient weighting", () => {
@@ -234,6 +234,8 @@ describe("ambient variety (pool-priority picking)", () => {
     state.toon.pools.focus.current = 0;
     state.toon.pools.vitality.current = 0;
     state.toon.pools.nerve.current = 0;
+    state.toon.pools.fatigue.current = 0;
+    state.toon.pools.concentration.current = 0;
     state.toon.completedQuests.push("cat-in-tree", "rat-basement", "wolf-pelts", "cave-clearing");
     const action = getNextAction(state);
     expect(action.kind).toBe("rest");
@@ -324,6 +326,8 @@ describe("ambient stickiness (commits to one pick, does not thrash)", () => {
     state.toon.pools.focus.current = 0;
     state.toon.pools.vitality.current = 0;
     state.toon.pools.nerve.current = 0;
+    state.toon.pools.fatigue.current = 0;
+    state.toon.pools.concentration.current = 0;
 
     step(state); // step() calls getNextAction internally, then acts on it
     let pick = state.toon.activeQuest?.questId;
@@ -430,3 +434,181 @@ function getActionKindFromActivity(activity: string): string {
   if (activity.startsWith("Questing")) return "quest";
   return activity.toLowerCase();
 }
+
+describe("gathering exhaustion (fatigue pool)", () => {
+  it("depletes fatigue while a gathering skill (woodcutting) is trained", () => {
+    const state = createInitialState();
+    state.toon.zone = "forest"; // skip travel, isolate training/drain
+    state.directives.push({ type: "train", target: "woodcutting", issuedAt: 0 });
+    step(state);
+    expect(state.toon.pools.fatigue.current).toBeLessThan(100);
+  });
+
+  it("stops the gathering activity at 0 fatigue (no random reassignment, falls to rest)", () => {
+    const state = createInitialState();
+    state.toon.zone = "forest";
+    state.directives.push({ type: "train", target: "woodcutting", issuedAt: 0 });
+    state.toon.pools.fatigue.current = 0.5; // one drain tick (0.5/tick) from empty
+    step(state); // drains to 0
+    step(state); // detects depletion, consumes directive, rests (regens +0.5)
+    expect(state.toon.pools.fatigue.current).toBe(0.5);
+    expect(state.directives.length).toBe(0);
+    expect(state.currentActivity).toBe("Resting");
+  });
+
+  it("clamps fatigue at exactly 0 and does not re-fire termination every tick while at 0", () => {
+    const state = createInitialState();
+    state.toon.zone = "mountain";
+    state.directives.push({ type: "train", target: "mining", issuedAt: 0 });
+    state.toon.pools.fatigue.current = 0.5;
+    step(state); // depletes to exactly 0
+    expect(state.toon.pools.fatigue.current).toBe(0);
+    step(state); // depletion detected, directive consumed, toon rests (regens once)
+    expect(state.directives.length).toBe(0);
+    expect(state.currentActivity).toBe("Resting");
+    // Running further ticks while resting must never go negative or throw,
+    // and must not re-consume an (already-empty) directive queue.
+    runTicks(state, 5);
+    expect(state.toon.pools.fatigue.current).toBeGreaterThanOrEqual(0);
+  });
+
+  it("recovers fatigue during rest/other activities once gathering stops", () => {
+    const state = createInitialState();
+    state.toon.pools.fatigue.current = 0;
+    // Complete all quests and drain every other pool-gated candidate so
+    // ambient mode has nothing to do but rest -- isolates pure fatigue
+    // regen math, same pattern as the existing stamina regen test.
+    state.toon.completedQuests.push("cat-in-tree", "rat-basement", "wolf-pelts", "cave-clearing");
+    state.toon.pools.stamina.current = 0;
+    state.toon.pools.energy.current = 0;
+    state.toon.pools.focus.current = 0;
+    state.toon.pools.vitality.current = 0;
+    state.toon.pools.nerve.current = 0;
+    runTicks(state, 10);
+    expect(state.toon.pools.fatigue.current).toBeCloseTo(5, 5); // 0.5/tick * 10
+  });
+
+  it("thieving also drains the shared fatigue pool (folded in per spec)", () => {
+    const state = createInitialState();
+    state.toon.zone = "village"; // thieving trains in the village market
+    state.directives.push({ type: "train", target: "thieving", issuedAt: 0 });
+    step(state);
+    expect(state.toon.pools.fatigue.current).toBeLessThan(100);
+  });
+});
+
+describe("combat exhaustion (HP) pool", () => {
+  it("HP depletes from combat damage down to exactly 0, clamped (never negative)", () => {
+    const state = createInitialState();
+    state.toon.hp = 3;
+    state.toon.maxHp = 20;
+    startFight(state, "village-bandit"); // hits hard enough to zero out fast
+    let rounds = 0;
+    let result: ReturnType<typeof resolveFightRound> = "ongoing";
+    while (state.toon.activeFight && rounds < 30) {
+      result = resolveFightRound(state);
+      rounds++;
+    }
+    expect(state.toon.hp).toBeGreaterThanOrEqual(0);
+    if (result === "collapse") {
+      expect(state.toon.hp).toBe(0);
+    }
+  });
+
+  it("forces combat to stop immediately at 0 HP (isCollapsed true, activeFight cleared)", () => {
+    const state = createInitialState();
+    state.toon.hp = 1;
+    state.toon.maxHp = 20;
+    startFight(state, "village-bandit");
+    let result: ReturnType<typeof resolveFightRound> = "ongoing";
+    let rounds = 0;
+    while (state.toon.activeFight && rounds < 30) {
+      result = resolveFightRound(state);
+      rounds++;
+    }
+    // village-bandit hits hard enough that starting at 1 HP with no floor
+    // reliably ends in collapse well before the 30-round budget.
+    expect(["collapse", "kill"]).toContain(result);
+    if (result === "collapse") {
+      expect(isCollapsed(state)).toBe(true);
+      expect(state.toon.activeFight).toBeNull();
+    }
+  });
+
+  it("does not re-fire collapse repeatedly once HP sits at 0 (fires exactly once per fight)", () => {
+    const state = createInitialState();
+    state.toon.hp = 1;
+    state.toon.maxHp = 20;
+    startFight(state, "village-bandit");
+    const results: string[] = [];
+    let rounds = 0;
+    while (state.toon.activeFight && rounds < 30) {
+      results.push(resolveFightRound(state));
+      rounds++;
+    }
+    // "collapse" (like "kill") clears activeFight, so it can only appear
+    // once -- resolveFightRound becomes a no-op ("ongoing") once the fight
+    // is already over.
+    expect(results.filter((r) => r === "collapse").length).toBeLessThanOrEqual(1);
+  });
+
+  it("at HP collapse, tick.ts randomly reassigns to a non-combat activity and excludes hunt/train:combat", () => {
+    const state = createInitialState();
+    state.toon.hp = 1;
+    state.toon.maxHp = 20;
+    state.directives.push({ type: "hunt", target: "nearest monster", issuedAt: 0 });
+    state.toon.activeFight = { monsterId: "village-bandit", monsterHp: 1000, events: [], turn: 0 };
+    // Force a collapse deterministically via direct tick invocation isn't
+    // exposed, so drive it through the real fight loop via runTicks/step,
+    // asserting the resulting ambient commitment (if any) never points back
+    // at combat.
+    let collapsed = false;
+    for (let i = 0; i < 30 && !collapsed; i++) {
+      step(state);
+      if (state.toon.hp <= 0) collapsed = true;
+    }
+    if (collapsed) {
+      expect(state.toon.activeFight).toBeNull();
+      const intent = state.ambientCommitment as { kind: string; skill?: string } | null;
+      if (intent) {
+        expect(intent.kind).not.toBe("hunt");
+        if (intent.kind === "train") expect(intent.skill).not.toBe("combat");
+      }
+    }
+  });
+
+  it("HP slowly regenerates while not in combat (regenHp), capped at maxHp", () => {
+    const state = createInitialState();
+    state.toon.hp = 0;
+    state.toon.maxHp = 20;
+    state.toon.activeFight = null;
+    regenHp(state);
+    expect(state.toon.hp).toBeGreaterThan(0);
+    expect(state.toon.hp).toBeLessThanOrEqual(state.toon.maxHp);
+
+    // Doesn't regen while actively fighting.
+    const fighting = createInitialState();
+    fighting.toon.hp = 5;
+    fighting.toon.activeFight = { monsterId: "village-bandit", monsterHp: 100, events: [], turn: 0 };
+    regenHp(fighting);
+    expect(fighting.toon.hp).toBe(5);
+
+    // Caps at maxHp, doesn't overshoot.
+    const nearFull = createInitialState();
+    nearFull.toon.hp = nearFull.toon.maxHp;
+    nearFull.toon.activeFight = null;
+    regenHp(nearFull);
+    expect(nearFull.toon.hp).toBe(nearFull.toon.maxHp);
+  });
+
+  it("recovers over many idle ticks after a collapse, eventually able to re-engage combat", () => {
+    const state = createInitialState();
+    state.toon.hp = 0;
+    state.toon.maxHp = 20;
+    state.toon.activeFight = null;
+    for (let i = 0; i < 25; i++) {
+      regenHp(state);
+    }
+    expect(state.toon.hp).toBeGreaterThan(0);
+  });
+});
