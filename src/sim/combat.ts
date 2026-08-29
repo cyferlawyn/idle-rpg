@@ -82,7 +82,13 @@ export function startFight(state: WorldState, monsterId: string): boolean {
  * a real kill apart from a flee -- both clear activeFight, but only a kill
  * should progress a kill-type quest step.
  */
-export type FightRoundResult = "ongoing" | "kill" | "flee";
+export type FightRoundResult = "ongoing" | "kill" | "flee" | "collapse";
+
+/** Whether the toon has been beaten to 0 HP -- a hard stop distinct from
+ * the voluntary flee-at-25% safety valve above 0 HP. */
+export function isCollapsed(state: WorldState): boolean {
+  return state.toon.hp <= 0;
+}
 
 export function resolveFightRound(state: WorldState): FightRoundResult {
   const fight = state.toon.activeFight;

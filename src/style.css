@@ -258,15 +258,30 @@ li {
   padding-right: 1.25rem; /* room for the collapse toggle */
 }
 
+/* Dedicated combat container: a bounded HUD-style panel anchored to the
+   bottom of the viewport, sized to fit its content -- NOT a full-canvas
+   overlay. The map, other HUD panels, and all game elements stay visible
+   and usable while a fight is in progress (see task t_c39ed951). */
 .fight-screen {
   position: absolute;
-  inset: 0;
-  background: rgba(10, 10, 14, 0.92);
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92vw, 520px);
+  max-height: min(40vh, 260px);
+  background: rgba(20, 20, 26, 0.92);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
-  pointer-events: none;
+  padding: 0.75rem 1rem;
+  overflow: hidden;
+  pointer-events: auto;
+  z-index: 15;
 }
 
 .fight-screen.hidden {
@@ -278,7 +293,6 @@ li {
   align-items: center;
   gap: 1.25rem;
   width: 100%;
-  max-width: 520px;
 }
 
 .fight-combatant {
@@ -346,5 +360,18 @@ li {
     bottom: 1rem;
     left: 1rem;
     right: auto;
+  }
+
+  /* Combat container: shrink to full width minus margins and give it more
+     vertical room since narrow layouts stack combatants less compactly. */
+  .fight-screen {
+    width: calc(100vw - 2rem);
+    max-height: min(45vh, 300px);
+    bottom: 0.5rem;
+  }
+
+  .fight-row {
+    flex-direction: column;
+    gap: 0.5rem;
   }
 }

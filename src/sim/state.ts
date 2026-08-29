@@ -22,6 +22,11 @@ export interface Skill {
 
 export type PoolName = "stamina" | "energy" | "focus" | "vitality" | "nerve";
 
+/** The three exhaustion pool categories per docs/exhaustion_pools_spec.md.
+ * "hp" routes to toon.hp/maxHp directly (no pools[] entry); "fatigue" and
+ * "concentration" are the two generic pools[] entries. */
+export type PoolCategory = "hp" | "fatigue" | "concentration";
+
 export interface ResourcePool {
   current: number;
   max: number;
